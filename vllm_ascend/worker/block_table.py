@@ -286,7 +286,7 @@ class MultiGroupBlockTable:
                 block_size, max_num_reqs,
                 max(
                     cdiv(max_model_len,
-                         block_size * dcp_world_size * pcp_world_size),
+                         block_size * dcp_world_size),
                     1 + num_speculative_tokens), max_num_batched_tokens,
                 pin_memory, device, kernel_size_list,
                 cp_kv_cache_interleave_size, num_speculative_tokens)
