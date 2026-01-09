@@ -61,7 +61,6 @@ from vllm.v1.attention.backends.gdn_attn import GDNAttentionMetadataBuilder
 from vllm.v1.attention.backends.utils import (AttentionCGSupport,
                                               CommonAttentionMetadata)
 from vllm.v1.core.sched.output import CachedRequestData, SchedulerOutput
-from vllm.v1.core.sched.output import CachedRequestData, SchedulerOutput
 from vllm.v1.kv_cache_interface import (AttentionSpec,
                                         EncoderOnlyAttentionSpec,
                                         FullAttentionSpec, KVCacheConfig,
@@ -233,16 +232,16 @@ class NPUModelRunner(GPUModelRunner):
         # Ascend-specific configurations
         self.ascend_config = get_ascend_config()
         set_weight_prefetch_method(self.ascend_config.weight_prefetch_config)
-        # Dump / PrecisionDebugger configuration now comes from AscendConfig
-        dump_cfg = self.ascend_config.dump_config_path
+        # # Dump / PrecisionDebugger configuration now comes from AscendConfig
+        # dump_cfg = self.ascend_config.dump_config_path
         self.debugger = None
-        if dump_cfg is not None:
-            if self.model_config.enforce_eager:
-                from msprobe.pytorch import PrecisionDebugger
-                self.debugger = PrecisionDebugger(dump_cfg)
-            else:
-                raise RuntimeError(
-                    "Dumping/debugging only works in eager mode.")
+        # if dump_cfg is not None:
+        #     if self.model_config.enforce_eager:
+        #         from msprobe.pytorch import PrecisionDebugger
+        #         self.debugger = PrecisionDebugger(dump_cfg)
+        #     else:
+        #         raise RuntimeError(
+        #             "Dumping/debugging only works in eager mode.")
         # use_hybrid_blocks: if hybrid blocks is used.
         self.use_hybrid_blocks: bool = False
         self.need_accepted_tokens: bool = False
@@ -500,16 +499,7 @@ class NPUModelRunner(GPUModelRunner):
         return self.model
 
     def _make_attention_mask(self, attn_state) -> torch.Tensor:
-        #  动态CP的DP场景需要mask，而且CP也需要mask
-        if 1 < self.pcp_size == self.dynamic_pcp_size:
-            return None
-        if self.pcp_size > 1 and self.dynamic_pcp_size == 1:
-            max_seq_len = max(seq_lens.max().item(), 0)
-            return torch.triu(
-                torch.full((max_seq_len, max_seq_len),
-                           float('-inf') if self.dtype == torch.float16 else 1,
-                           device=self.device,
-                           dtype=torch.bool), 1)
+        # pcp situation.
         if self.attn_mask_builder is None:
             raise ValueError("Attn mask builder is None")
         # Pooling situation.
@@ -1470,7 +1460,9 @@ class NPUModelRunner(GPUModelRunner):
                     batch_descriptor=batch_descriptor,
                     num_actual_tokens=scheduler_output.
                     total_num_scheduled_tokens,
-                    model_instance=self.model):
+                    model_instance=self.model,
+                    pcp_size=self.pcp_size,
+                    dynamic_pcp_size=self.dynamic_pcp_size):
                 self.maybe_setup_kv_connector(scheduler_output)
 
                 hidden_states = self._generate_process_reqs_hidden_states(
@@ -1802,8 +1794,7 @@ class NPUModelRunner(GPUModelRunner):
         # the sampled tokens back, because there's no direct communication
         # between the first-stage worker and the last-stage worker.
         req_ids = self.input_batch.req_ids
-        # TODO: 检查这个逻辑 for req_idx in range(num_sampled_tokens):
-        for req_idx in range(len(self.input_batch.req_ids)):
+        for req_idx in range(len(req_ids)):
             if self.use_async_scheduling:
                 sampled_ids = [
                     -1
@@ -2190,7 +2181,9 @@ class NPUModelRunner(GPUModelRunner):
                     num_actual_tokens=0,
                     aclgraph_runtime_mode=aclgraph_runtime_mode,
                     batch_descriptor=batch_descriptor,
-                    model_instance=self.model):
+                    model_instance=self.model,
+                    pcp_size=self.pcp_size,
+                    dynamic_pcp_size=self.dynamic_pcp_size):
                 hidden_states = self._generate_dummy_run_hidden_states(
                     input_ids, positions, num_tokens_padded,
                     intermediate_tensors, inputs_embeds)
@@ -3107,8 +3100,6 @@ class NPUModelRunner(GPUModelRunner):
 
     def _update_tokens_for_pcp(self, tokens):
         num_reqs = self.input_batch.num_reqs
-        if not (1 < self.pcp_size == self.dynamic_pcp_size):
-            return tokens, None, None
         tokens = np.array(tokens, dtype=np.int32)
         num_decode_reqs = (np.array(tokens) <= self.decode_threshold).sum()
         num_decode_tokens = sum(tokens[:num_decode_reqs])
@@ -3497,7 +3488,7 @@ class NPUModelRunner(GPUModelRunner):
 
     def _pre_process_sched_output_in_dynamic_pcp(
             self, scheduler_output: "SchedulerOutput") -> "SchedulerOutput":
-        print(f"==={dist.get_rank()}===> scheduler_output:{scheduler_output}")
+        # print(f"==={dist.get_rank()}===> scheduler_output:{scheduler_output}")
 
         # 动态PCP仅支持prefill阶段
         # TODO-lsj: 考虑splitfuse情况
@@ -3579,13 +3570,13 @@ class NPUModelRunner(GPUModelRunner):
             self.dynamic_pcp_info.max_num_token_across_cp = max_num_token_across_cp
             self.dynamic_pcp_info.logits_indices = logits_indices
 
-            print(
-                f"===rank{dist.get_rank()}===> "
-                f"original_input_batch:{original_input_batch}, "
-                f"original_req_ids: {self.dynamic_pcp_info.original_req_ids}, "
-                f"original_req_id_to_index:{original_req_id_to_index}, "
-                f"max_num_token_across_cp:{max_num_token_across_cp}, "
-                f"logits_indices:{logits_indices}")
+            # print(
+            #     f"===rank{dist.get_rank()}===> "
+            #     f"original_input_batch:{original_input_batch}, "
+            #     f"original_req_ids: {self.dynamic_pcp_info.original_req_ids}, "
+            #     f"original_req_id_to_index:{original_req_id_to_index}, "
+            #     f"max_num_token_across_cp:{max_num_token_across_cp}, "
+            #     f"logits_indices:{logits_indices}")
 
             # 仅保留属于当前 cprank 的请求
             scheduler_output_new = SchedulerOutput(
@@ -3637,7 +3628,9 @@ class NPUModelRunner(GPUModelRunner):
         with set_ascend_forward_context(attn_metadata,
                                         self.vllm_config,
                                         num_tokens=num_input_tokens,
-                                        model_instance=self.model):
+                                        model_instance=self.model,
+                                        pcp_size=self.pcp_size,
+                                        dynamic_pcp_size=self.dynamic_pcp_size):
             # generate
             self._generate_process_reqs_hidden_states(None, input_ids_idle,
                                                       positions_idle, None,
