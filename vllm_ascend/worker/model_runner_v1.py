@@ -1794,7 +1794,7 @@ class NPUModelRunner(GPUModelRunner):
         # the sampled tokens back, because there's no direct communication
         # between the first-stage worker and the last-stage worker.
         req_ids = self.input_batch.req_ids
-        for req_idx in range(num_sampled_tokens):
+        for req_idx in range(len(req_ids)):
             if self.use_async_scheduling:
                 sampled_ids = [
                     -1
@@ -3488,7 +3488,7 @@ class NPUModelRunner(GPUModelRunner):
 
     def _pre_process_sched_output_in_dynamic_pcp(
             self, scheduler_output: "SchedulerOutput") -> "SchedulerOutput":
-        print(f"==={dist.get_rank()}===> scheduler_output:{scheduler_output}")
+        # print(f"==={dist.get_rank()}===> scheduler_output:{scheduler_output}")
 
         # 动态PCP仅支持prefill阶段
         # TODO-lsj: 考虑splitfuse情况
@@ -3570,13 +3570,13 @@ class NPUModelRunner(GPUModelRunner):
             self.dynamic_pcp_info.max_num_token_across_cp = max_num_token_across_cp
             self.dynamic_pcp_info.logits_indices = logits_indices
 
-            print(
-                f"===rank{dist.get_rank()}===> "
-                f"original_input_batch:{original_input_batch}, "
-                f"original_req_ids: {self.dynamic_pcp_info.original_req_ids}, "
-                f"original_req_id_to_index:{original_req_id_to_index}, "
-                f"max_num_token_across_cp:{max_num_token_across_cp}, "
-                f"logits_indices:{logits_indices}")
+            # print(
+            #     f"===rank{dist.get_rank()}===> "
+            #     f"original_input_batch:{original_input_batch}, "
+            #     f"original_req_ids: {self.dynamic_pcp_info.original_req_ids}, "
+            #     f"original_req_id_to_index:{original_req_id_to_index}, "
+            #     f"max_num_token_across_cp:{max_num_token_across_cp}, "
+            #     f"logits_indices:{logits_indices}")
 
             # 仅保留属于当前 cprank 的请求
             scheduler_output_new = SchedulerOutput(
