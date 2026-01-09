@@ -36,7 +36,9 @@ def set_ascend_forward_context(
         aclgraph_runtime_mode: CUDAGraphMode = CUDAGraphMode.NONE,
         batch_descriptor: Optional[BatchDescriptor] = None,
         model_instance: torch.nn.Module = None,
-        is_mtp_model=False):
+        is_mtp_model=False,
+        pcp_size=1,
+        dynamic_pcp_size=0):
     """A context manager that stores the current forward context,
     can be attention metadata, etc.
     We add some additional param into forward_context.
@@ -55,7 +57,7 @@ def set_ascend_forward_context(
         from vllm_ascend.ops.fused_moe.moe_comm_method import \
             get_moe_comm_method
         moe_comm_type = select_moe_comm_method(num_tokens, vllm_config,
-                                               is_mtp_model)
+                                               is_mtp_model, pcp_size, dynamic_pcp_size)
         forward_context.moe_comm_type = moe_comm_type
         forward_context.moe_comm_method = get_moe_comm_method(moe_comm_type)
 
@@ -195,7 +197,9 @@ def get_mc2_mask():
 
 def select_moe_comm_method(num_tokens: int,
                            vllm_config: VllmConfig,
-                           is_mtp_model=False) -> Optional[MoECommType]:
+                           is_mtp_model=False,
+                           pcp_size=2,
+                           dynamic_pcp_size=0) -> Optional[MoECommType]:
     """Select the MoE communication method according to parallel settings,
     device generation, token count, and quantization.
 
@@ -261,4 +265,11 @@ def select_moe_comm_method(num_tokens: int,
 
     else:
         raise ValueError(f"Unsupported soc_version: {soc_version}")
+
+    if ((pcp_size > 1
+        and (moe_comm_type == MoECommType.ALLGATHER))
+        or (pcp_size > 1 and dynamic_pcp_size == 1
+            and moe_comm_type == MoECommType.MC2)):
+            moe_comm_type = MoECommType.ALLTOALL
+        
     return moe_comm_type

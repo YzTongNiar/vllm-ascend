@@ -392,13 +392,18 @@ class AscendMLAMetadataBuilder:
 
         self.num_decodes, self.num_prefills, self.num_decode_tokens, self.num_prefill_tokens = \
             split_decodes_and_prefills(common_attn_metadata, decode_threshold=self.decode_threshold)
-        self.set_num_actual_tokens(common_attn_metadata)
+        # self.set_num_actual_tokens(common_attn_metadata)
+
+        long_seq_metadata = common_attn_metadata.prefill_context_parallel_metadata
+        self.num_actual_tokens = common_attn_metadata.num_actual_tokens
+        self.num_actual_tokens_pcp_padded = long_seq_metadata.num_actual_tokens_pcp_padded if long_seq_metadata else self.num_actual_tokens
+
         assert self.num_decodes + self.num_prefills == num_reqs
         assert self.num_decode_tokens + self.num_prefill_tokens == common_attn_metadata.num_actual_tokens
 
         # NOTE: Currently, MTP-fullgraph is incompatibility pcp
         self.slot_mapping = common_attn_metadata.slot_mapping[:self.
-                                                              num_actual_tokens]
+                                                              num_actual_tokens_pcp_padded]
 
         if self.cos_cache is None:
             self.cos_cache = model.model.layers[
@@ -428,7 +433,7 @@ class AscendMLAMetadataBuilder:
                 common_prefix_len, common_attn_metadata, model)
 
         return self.metadata_cls(  # type: ignore
-            num_actual_tokens_pcp_padded=self.num_actual_tokens,
+            num_actual_tokens_pcp_padded=self.num_actual_tokens_pcp_padded,
             num_input_tokens=common_attn_metadata.num_input_tokens,
             num_actual_tokens=self.num_actual_tokens,
             query_lens=self.query_lens.tolist(),
