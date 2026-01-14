@@ -71,6 +71,7 @@ class ReqMeta:
     remote_engine_id: str
     remote_pcp_size: int
     remote_dcp_size: int
+    remote_dynamic_pcp_ranks: list[int]
     remote_multi_nodes_meta_mapping: dict[str, dict[str, Any]]
 
 
@@ -684,6 +685,7 @@ class MooncakeConnectorMetadata(KVConnectorMetadata):
             remote_port=kv_transfer_params["remote_port"],
             remote_pcp_size=kv_transfer_params.get("remote_pcp_size", 1),
             remote_dcp_size=kv_transfer_params.get("remote_dcp_size", 1),
+            remote_dynamic_pcp_ranks=kv_transfer_params.get("remote_dynamic_pcp_ranks", []),
             remote_multi_nodes_meta_mapping=kv_transfer_params.get(
                 "remote_multi_nodes_meta_mapping", {}),
         )
@@ -956,6 +958,7 @@ class MooncakeConnectorScheduler:
             remote_pcp_size=self.pcp_size,
             remote_dcp_size=self.dcp_size,
             last_token_id=request.output_token_ids[-1],
+            remote_dynamic_pcp_ranks=request.dynamic_pcp_ranks,
             remote_multi_nodes_meta_mapping=self.multi_nodes_meta_mapping,
         )
 
@@ -1226,11 +1229,17 @@ class MooncakeConnectorWorker:
                 meta.local_block_ids
             ], [meta.remote_block_ids]
             return remote_handshake_port_list, local_block_ids_list, remote_block_ids_list
-
+        print(f"++++>local: local_dcp_size:{self.dcp_size}, local_pcp_size:{self.pcp_size}, local_tp_size:{self.tp_size}\n")
+        print(f"++++>remote: remote_dcp_size:{meta.remote_dcp_size}, remote_pcp_size:{meta.remote_pcp_size}, dynamic_pcp_size{meta.remote_dynamic_pcp_ranks}, remote_tp_size:{self._prefill_tp_size}\n")
         if self.pcp_size == meta.remote_pcp_size and self.dcp_size == meta.remote_dcp_size:
             # remote & local cp/dcp are equal, do kv transfer point-to-point
             remote_kv_num = 1
-            remote_ports = [meta.remote_port + self.pcp_rank * self.tp_size + tp_offset \
+            if meta.remote_dynamic_pcp_ranks:
+                # TODO: dynamic pcp size 为[1,pcp]时，需要重新适配
+                pcp_rank = meta.remote_dynamic_pcp_ranks[0]
+            else:
+                pcp_rank = self.pcp_rank
+            remote_ports = [meta.remote_port + pcp_rank * self.tp_size + tp_offset \
                 for tp_offset in range(self.tp_rank, int(self._prefill_tp_size), self.tp_size)]
             remote_block_nums = [len(meta.remote_block_ids)]
         else:
@@ -1248,19 +1257,29 @@ class MooncakeConnectorWorker:
             remote_dcp_size = meta.remote_dcp_size // self.dcp_size
             remote_kv_num = meta.remote_pcp_size * remote_dcp_size
             cp_dcp_offsets = []
-            for cp_idx in range(meta.remote_pcp_size):
-                cp_offset = cp_idx * self._prefill_tp_size
-                cp_dcp_offsets += list(
-                    range(cp_offset, cp_offset + remote_dcp_size))
+            if meta.remote_dynamic_pcp_ranks:
+                for cp_idx in range(meta.remote_dynamic_pcp_ranks):
+                    cp_offset = cp_idx * self._prefill_tp_size
+                    cp_dcp_offsets += list(
+                        range(cp_offset, cp_offset + remote_dcp_size))
+            else:
+                for cp_idx in range(meta.remote_pcp_size):
+                    cp_offset = cp_idx * self._prefill_tp_size
+                    cp_dcp_offsets += list(
+                        range(cp_offset, cp_offset + remote_dcp_size))
             tp_offset = self.tp_rank // remote_dcp_size * remote_dcp_size
             remote_ports = [meta.remote_port + cp_dcp_offset + tp_offset \
                 for cp_dcp_offset in cp_dcp_offsets]
             # recompute cp/dcp block assign here, maybe we can also pass it from P node meta
             local_block_num = len(meta.local_block_ids)
+            remote_pcp_size = meta.remote_pcp_size
+            if meta.remote_dynamic_pcp_ranks:
+                remote_pcp_size = len(meta.remote_dynamic_pcp_ranks)
+            remote_kv_num = remote_pcp_size * remote_dcp_size
             remote_block_nums = [
-                local_block_num // (meta.remote_pcp_size * remote_dcp_size)
-            ] * meta.remote_pcp_size * remote_dcp_size
-            num_remain_blocks = local_block_num % (meta.remote_pcp_size *
+                local_block_num // (remote_pcp_size * remote_dcp_size)
+            ] * remote_pcp_size * remote_dcp_size
+            num_remain_blocks = local_block_num % (remote_pcp_size *
                                                    remote_dcp_size)
             for i in range(num_remain_blocks):
                 remote_block_nums[i] += 1
