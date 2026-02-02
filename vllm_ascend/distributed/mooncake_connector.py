@@ -1220,6 +1220,7 @@ class MooncakeConnectorWorker:
         In cp/dcp scenario, kv_cache may be split, so we need to pull multiple blocks from multiple remote P node.
         Use this function to calculate remote port and remote block number of each remote P node that we need to pull.
         """
+        # print(f"meta.remote_pcp_size {meta.remote_pcp_size}* meta.remote_dcp_size {meta.remote_dcp_size} * self.pcp_size {self.pcp_size} * self.dcp_size {self.dcp_size}")
         if meta.remote_pcp_size * meta.remote_dcp_size * self.pcp_size * self.dcp_size == 1:
             choosen_rank_list = self._get_remote_rank(req_id)
             remote_handshake_port_list = [[
@@ -1229,8 +1230,7 @@ class MooncakeConnectorWorker:
                 meta.local_block_ids
             ], [meta.remote_block_ids]
             return remote_handshake_port_list, local_block_ids_list, remote_block_ids_list
-        print(f"++++>local: local_dcp_size:{self.dcp_size}, local_pcp_size:{self.pcp_size}, local_tp_size:{self.tp_size}\n")
-        print(f"++++>remote: remote_dcp_size:{meta.remote_dcp_size}, remote_pcp_size:{meta.remote_pcp_size}, dynamic_pcp_size{meta.remote_dynamic_pcp_ranks}, remote_tp_size:{self._prefill_tp_size}\n")
+
         if self.pcp_size == meta.remote_pcp_size and self.dcp_size == meta.remote_dcp_size:
             # remote & local cp/dcp are equal, do kv transfer point-to-point
             remote_kv_num = 1
@@ -1258,7 +1258,7 @@ class MooncakeConnectorWorker:
             remote_kv_num = meta.remote_pcp_size * remote_dcp_size
             cp_dcp_offsets = []
             if meta.remote_dynamic_pcp_ranks:
-                for cp_idx in range(meta.remote_dynamic_pcp_ranks):
+                for cp_idx in meta.remote_dynamic_pcp_ranks:
                     cp_offset = cp_idx * self._prefill_tp_size
                     cp_dcp_offsets += list(
                         range(cp_offset, cp_offset + remote_dcp_size))
@@ -1322,7 +1322,7 @@ class MooncakeConnectorWorker:
                 meta.remote_engine_id, len(meta.local_block_ids),
                 len(meta.remote_block_ids))
 
-            if prefill_context_parallel_enable():
+            if meta.remote_pcp_size * meta.remote_dcp_size > 1:
                 remote_handshake_port_list, local_block_ids_list, remote_block_ids_list = self._get_kv_split_metadata(
                     req_id, meta)
 
