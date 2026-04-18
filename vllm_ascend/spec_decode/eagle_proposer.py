@@ -820,11 +820,24 @@ class SpecDecodeBaseProposer(EagleProposer):
                 last_hidden_states = last_hidden_states[:num_tokens]
                 last_hidden_states = get_pcp_group().all_gather(last_hidden_states, 0)
                 last_hidden_states = torch.index_select(
-                    last_hidden_states,
-                    0,
-                    self.runner.pcp_manager.pcp_allgather_restore_idx.gpu[: last_hidden_states.shape[0]],
-                )
+                last_hidden_states,
+                0,
+                self.runner.pcp_manager.pcp_allgather_restore_idx.gpu[: last_hidden_states.shape[0]],
+            )
 
+        if (
+            os.getenv("DBG_HS", "0") == "1"
+            and (
+                not torch.distributed.is_initialized()
+                or torch.distributed.get_rank() == 0
+            )
+        ):
+            logger.info(
+                "[DBG_HS][draft] shape=%s dtype=%s preview=%s",
+                tuple(last_hidden_states.shape),
+                last_hidden_states.dtype,
+                last_hidden_states[:2, :16].detach().float().cpu(),
+            )
         if lmhead_tp_enable():
             max_num_reqs_across_dp = (
                 self.vllm_config.scheduler_config.max_num_seqs * self.runner.uniform_decode_query_len

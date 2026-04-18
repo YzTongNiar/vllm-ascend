@@ -18,6 +18,7 @@
 #
 
 import math
+import os
 import sys
 import time
 from collections import defaultdict
@@ -1515,6 +1516,14 @@ class NPUModelRunner(GPUModelRunner):
             hidden_states = self._model_forward(
                 num_tokens_padded, input_ids, positions, intermediate_tensors, inputs_embeds, **model_kwargs
             )
+            if os.getenv("DBG_HS", "0") == "1" and (not dist.is_initialized() or dist.get_rank() == 0):
+                hs = hidden_states[0] if isinstance(hidden_states, tuple) else hidden_states
+                logger.info(
+                    "[DBG_HS][main] shape=%s dtype=%s preview=%s",
+                    tuple(hs.shape),
+                    hs.dtype,
+                    hs[:2, :16].detach().float().cpu(),
+                )
         with record_function_or_nullcontext("post process"):
             aux_hidden_states = None
             if self.use_aux_hidden_state_outputs:
@@ -1550,7 +1559,6 @@ class NPUModelRunner(GPUModelRunner):
                         self.debugger.stop()
                         self.debugger.step()
                     return output
-
                 sample_hidden_states = hidden_states[logits_indices]
                 logits = self.model.compute_logits(sample_hidden_states)
             else:
