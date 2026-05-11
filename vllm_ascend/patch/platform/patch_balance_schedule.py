@@ -268,7 +268,7 @@ class BalanceScheduler(Scheduler):
                 if len(self.running) == self.max_num_running_reqs:
                     break
 
-                balance_flag = max(t.item() for t in self.balance_queue) >= self.max_num_running_reqs - 1
+                balance_flag = max(t.item() for t in self.balance_queue) >= self.max_num_running_reqs - 2
                 if balance_flag:
                     break
 
@@ -295,14 +295,14 @@ class BalanceScheduler(Scheduler):
 
                 # Skip request if the structured output request is still waiting
                 # for FSM compilation.
-                if request.status == RequestStatus.WAITING_FOR_FSM:
-                    structured_output_req = request.structured_output_request
-                    if structured_output_req and structured_output_req.grammar:
-                        request.status = RequestStatus.WAITING
-                    else:
-                        self.waiting.pop_request()
-                        skipped_waiting_requests.prepend_request(request)
-                        continue
+                #if request.status == RequestStatus.WAITING_FOR_FSM:
+                   # structured_output_req = request.structured_output_request
+                   # if structured_output_req and structured_output_req.grammar:
+                       # request.status = RequestStatus.WAITING
+                    #else:
+                       # self.waiting.pop_request()
+                        #skipped_waiting_requests.prepend_request(request)
+                        #continue
 
                 # Streaming: skip request if still waiting for next streaming req.
                 if request.status == RequestStatus.WAITING_FOR_STREAMING_REQ:
