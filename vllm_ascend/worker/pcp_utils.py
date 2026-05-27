@@ -918,6 +918,13 @@ class PCPManager:
             mtp_slot_pad = torch.full([num_tokens_mtp_pad], -1, dtype=torch.int32)
             mtp_slot_pad[unpad_mask] = mtp_slot_ori
             self.mtp_slot_pad = mtp_slot_pad.to(self.device, non_blocking=True)
+            # DEBUG: mtp_slot_pad generation
+            num_neg = int((mtp_slot_pad == -1).sum())
+            print(f"[DEBUG][PCPManager] generate_pcp_mtp_input mtp_slot_pad: "
+                  f"num_reqs={self.num_reqs} num_tokens_ori={num_tokens_ori} "
+                  f"num_tokens_mtp={num_tokens_mtp} num_tokens_mtp_pad={num_tokens_mtp_pad} "
+                  f"neg_slots={num_neg}/{num_tokens_mtp_pad} "
+                  f"mtp_slot_pad={mtp_slot_pad[:min(12,num_tokens_mtp_pad)].cpu().tolist()}")
 
     def _update_input_ids_pcp_full_ids(
         self,

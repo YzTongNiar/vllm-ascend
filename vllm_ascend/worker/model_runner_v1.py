@@ -1063,6 +1063,15 @@ class NPUModelRunner(GPUModelRunner):
                 positions_compressed_list,
                 req_indices_compressed_list,
             )
+            # DEBUG: target model slot_mapping under DCP + spec decode
+            if self.dcp_size > 1 and len(scheduler_output.scheduled_spec_decode_tokens) > 0:
+                slot_cpu = self.input_batch.block_table.block_tables[0].slot_mapping.cpu[:total_num_scheduled_tokens]
+                num_neg = int((slot_cpu[:total_num_scheduled_tokens] == -1).sum())
+                print(f"[DEBUG][ModelRunner][dcp_rank={self.dcp_rank}] target slot_mapping: "
+                      f"num_reqs={num_reqs} total_tokens={total_num_scheduled_tokens} "
+                      f"neg_slots={num_neg}/{total_num_scheduled_tokens} "
+                      f"positions={self.positions[:min(8,total_num_scheduled_tokens)].cpu().tolist()} "
+                      f"slots={slot_cpu[:min(8,total_num_scheduled_tokens)].tolist()}")
 
         if self.use_async_spec_decode and (self.uses_mrope or self.uses_xdrope_dim > 0):
             drift = self.num_computed_tokens[req_indices_gpu].to(
@@ -1353,6 +1362,11 @@ class NPUModelRunner(GPUModelRunner):
         draft_token_ids = draft_token_ids[target_logits_indices + 1]
         if self.pcp_size > 1:
             logits_indices = logits_indices_pcp
+        # DEBUG: spec decode metadata under DCP
+        if self.dcp_size > 1 and total_num_draft_tokens > 0:
+            print(f"[DEBUG][ModelRunner][dcp_rank={self.dcp_rank}] _calc_spec_decode_metadata: "
+                  f"num_draft_tokens={num_draft_tokens.tolist()} "
+                  f"draft_token_ids={draft_token_ids[:min(12,total_num_draft_tokens)].cpu().tolist()}")
         return SpecDecodeMetadata(
             draft_token_ids=draft_token_ids,
             num_draft_tokens=num_draft_tokens.tolist(),
@@ -2109,6 +2123,11 @@ class NPUModelRunner(GPUModelRunner):
 
         with record_function_or_nullcontext("sample_token"):
             sampler_output = self._sample(logits, spec_decode_metadata)
+
+        # DEBUG: sampled tokens under DCP + spec decode
+        if self.dcp_size > 1 and spec_decode_metadata is not None:
+            print(f"[DEBUG][ModelRunner][dcp_rank={self.dcp_rank}] sample_tokens: "
+                  f"sampled_token_ids={sampler_output.sampled_token_ids[:min(8,sampler_output.sampled_token_ids.shape[0])].cpu().tolist()}")
 
         if self.need_accepted_tokens:
             if self.sampling_done_event is None:

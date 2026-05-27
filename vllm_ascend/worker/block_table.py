@@ -209,6 +209,15 @@ class BlockTable:
             slot_mapping = block_numbers * self.block_size + block_offsets
             # Write final slots, use -1 for not-local
             self.slot_mapping.np[: req_indices.shape[0]] = np.where(mask, slot_mapping, -1)
+            # DEBUG: DCP slot_mapping diagnostics
+            if self.dcp_world_size > 1 and req_indices.shape[0] > 0:
+                num_local = int(mask.sum())
+                num_pad = int((~mask).sum())
+                if num_pad > 0:
+                    print(f"[DEBUG][BlockTable][rank={self.current_rank}] compute_slot_mapping_draft: "
+                          f"reqs={req_indices.shape[0]} positions={positions[:5]}... "
+                          f"local_slots={num_local} pad_slots={num_pad} "
+                          f"slot_mapping={self.slot_mapping.np[: min(10, req_indices.shape[0])]}")
         else:
             assert self.kernel_sizes is not None
             assert self.block_size == self.kernel_sizes[0]
