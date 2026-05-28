@@ -1615,6 +1615,7 @@ class NPUModelRunner(GPUModelRunner):
         if self.use_async_scheduling and not (
             scheduler_output.has_structured_output_requests
             or self.input_batch.sampling_metadata.output_token_ids
+            or self.num_spec_tokens > 0
         ):
             return
         self._draft_token_req_ids = self.input_batch.req_ids.copy()
@@ -1988,6 +1989,8 @@ class NPUModelRunner(GPUModelRunner):
 
                 sample_hidden_states = hidden_states[logits_indices]
                 logits = self.model.compute_logits(sample_hidden_states)
+                print(f"[DEBUG][ModelRunner][dcp_rank={self.dcp_rank}] TARGET OUTPUT: "
+                      f"logits_argmax={logits.argmax(dim=-1)[:min(8, logits.shape[0])].cpu().tolist()}")
             else:
                 # Rare case.
                 assert not self.is_pooling_model
@@ -1999,6 +2002,8 @@ class NPUModelRunner(GPUModelRunner):
                 else:
                     sample_hidden_states = hidden_states[logits_indices]
                     logits = self.model.compute_logits(sample_hidden_states)
+                    print(f"[DEBUG][ModelRunner][dcp_rank={self.dcp_rank}] TARGET OUTPUT: "
+                          f"logits_argmax={logits.argmax(dim=-1)[:min(8, logits.shape[0])].cpu().tolist()}")
 
                 model_output_broadcast_data: dict[str, Any] = {}
                 if logits is not None:

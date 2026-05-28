@@ -963,6 +963,8 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             token_indices_to_sample = token_indices_to_sample[:num_indices]
 
         draft_token_ids = logits.argmax(dim=-1)
+        print(f"[DEBUG][EagleProposer][dcp_rank={self.dcp_rank}] first_pass OUTPUT: "
+              f"draft_token_ids={draft_token_ids[:min(8, draft_token_ids.shape[0])].cpu().tolist()}")
 
         # Early exit if there is only one draft token to be generated.
         if self.num_speculative_tokens == 1 or self.parallel_drafting:
@@ -1104,6 +1106,8 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             # TODO(wenlong): get more than one token for tree attention
             hidden_states = hidden_states[:batch_size]
             draft_token_ids = logits.argmax(dim=-1)
+            print(f"[DEBUG][EagleProposer][dcp_rank={self.dcp_rank}] step={draft_step+1} OUTPUT: "
+                  f"draft_token_ids={draft_token_ids[:min(8, draft_token_ids.shape[0])].cpu().tolist()}")
             draft_token_ids_tensor[draft_step + 1] = draft_token_ids
 
         # [batch_size, num_speculative_tokens]
