@@ -907,6 +907,12 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
                 if self.method == "mtp":
                     model_kwargs["positions"] = model_positions
 
+        # DEBUG: print draft model inputs right before first pass forward
+        print(f"[DEBUG][EagleProposer][dcp_rank={self.dcp_rank}] "
+              f"DRAFT model_forward first_pass: num_input_tokens={num_input_tokens} "
+              f"model_input_ids={model_kwargs.get('input_ids')[:min(8, num_input_tokens)].cpu().tolist() if model_kwargs.get('input_ids') is not None else None} "
+              f"model_positions={model_kwargs.get('positions')[:min(8, num_input_tokens)].cpu().tolist() if model_kwargs.get('positions') is not None else None} "
+              f"has_hidden_states={'hidden_states' in model_kwargs}")
         ret_hidden_states = self.model(**model_kwargs)
         if not self.model_returns_tuple():
             last_hidden_states = ret_hidden_states
@@ -1061,6 +1067,12 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             if self.pass_hidden_states_to_model:
                 model_kwargs["hidden_states"] = model_hidden_states
 
+            # DEBUG: print draft model inputs right before step forward
+            print(f"[DEBUG][EagleProposer][dcp_rank={self.dcp_rank}] "
+                  f"DRAFT model_forward step={draft_step+1}: input_batch_size={input_batch_size} "
+                  f"model_input_ids={model_kwargs.get('input_ids')[:min(8, input_batch_size)].cpu().tolist() if model_kwargs.get('input_ids') is not None else None} "
+                  f"model_positions={model_kwargs.get('positions')[:min(8, input_batch_size)].cpu().tolist() if model_kwargs.get('positions') is not None else None} "
+                  f"has_hidden_states={'hidden_states' in model_kwargs}")
             ret_hidden_states = self.model(**model_kwargs)
             if not self.model_returns_tuple():
                 last_hidden_states = ret_hidden_states

@@ -2474,6 +2474,12 @@ class NPUModelRunner(GPUModelRunner):
             "inputs_embeds": inputs_embeds,
             **model_kwargs,
         }
+        # DEBUG: print model inputs right before forward
+        if positions is not None and positions.numel() > 0:
+            print(f"[DEBUG][ModelRunner][dcp_rank={getattr(self, 'dcp_rank', -1)}] "
+                  f"TARGET model_forward: num_tokens_padded={num_tokens_padded} "
+                  f"input_ids={input_ids[:min(8, input_ids.numel())].cpu().tolist() if input_ids is not None else None} "
+                  f"positions={positions[:min(8, positions.numel())].cpu().tolist()}")
         run_model = partial(self.model, **model_inputs)
 
         if self.enable_enpu:
