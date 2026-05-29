@@ -240,6 +240,79 @@ class ExecuteModelState(NamedTuple):
     batch_desc: BatchDescriptor
 
 
+def _print_debug_obj(obj, prefix="", max_depth=4, depth=0):
+    """Recursively print an object for debugging."""
+    if depth >= max_depth:
+        print(f"{prefix}... (max depth {max_depth})")
+        return
+
+    if isinstance(obj, torch.Tensor):
+        info = f"Tensor(shape={list(obj.shape)}, dtype={obj.dtype}, device={obj.device})"
+        if obj.numel() <= 8:
+            info += f" val={obj.cpu().tolist()}"
+        else:
+            info += f" val[:8]={obj.flatten()[:8].cpu().tolist()}"
+        print(f"{prefix}{info}")
+    elif isinstance(obj, np.ndarray):
+        info = f"ndarray(shape={list(obj.shape)}, dtype={obj.dtype})"
+        if obj.size <= 8:
+            info += f" val={obj.tolist()}"
+        else:
+            info += f" val[:8]={obj.flatten()[:8].tolist()}"
+        print(f"{prefix}{info}")
+    elif isinstance(obj, (list, tuple)):
+        print(f"{prefix}{type(obj).__name__}(len={len(obj)})")
+        for i, item in enumerate(obj[:8]):
+            _print_debug_obj(item, prefix=f"{prefix}  [{i}] ", max_depth=max_depth, depth=depth + 1)
+        if len(obj) > 8:
+            print(f"{prefix}  ... ({len(obj) - 8} more items)")
+    elif isinstance(obj, dict):
+        print(f"{prefix}dict(len={len(obj)})")
+        for k, v in list(obj.items())[:8]:
+            print(f"{prefix}  '{k}':")
+            _print_debug_obj(v, prefix=f"{prefix}    ", max_depth=max_depth, depth=depth + 1)
+        if len(obj) > 8:
+            print(f"{prefix}  ... ({len(obj) - 8} more items)")
+    elif hasattr(obj, "__dataclass_fields__"):
+        print(f"{prefix}{type(obj).__name__}(dataclass)")
+        for k in obj.__dataclass_fields__:
+            v = getattr(obj, k, None)
+            print(f"{prefix}  .{k} =")
+            _print_debug_obj(v, prefix=f"{prefix}    ", max_depth=max_depth, depth=depth + 1)
+    else:
+        print(f"{prefix}{type(obj).__name__}: {obj}")
+
+
+def _print_debug_attn_metadata(attn_metadata, common_metadata=None, prefix="[DEBUG][AttnMetadata]"):
+    """Recursively print one layer's attn_metadata and its common_metadata for debugging."""
+    if isinstance(attn_metadata, list):
+        if not attn_metadata:
+            print(f"{prefix} empty list")
+            return
+        attn_dict = attn_metadata[0]
+    else:
+        attn_dict = attn_metadata
+
+    if not attn_dict:
+        print(f"{prefix} empty dict")
+        return
+
+    layer_name = next(iter(attn_dict.keys()))
+    metadata = attn_dict[layer_name]
+    print(f"{prefix} layer='{layer_name}', type={type(metadata).__name__}")
+    _print_debug_obj(metadata, prefix=f"{prefix}  ")
+
+    if common_metadata is not None:
+        print(f"{prefix} common_metadata type={type(common_metadata).__name__}")
+        _print_debug_obj(common_metadata, prefix=f"{prefix}  common_metadata.")
+        long_seq_metadata = getattr(common_metadata, "prefill_context_parallel_metadata", None)
+        if long_seq_metadata is not None:
+            print(f"{prefix} common_metadata.long_seq_metadata (prefill_context_parallel_metadata) type={type(long_seq_metadata).__name__}")
+            _print_debug_obj(long_seq_metadata, prefix=f"{prefix}  long_seq_metadata.")
+        else:
+            print(f"{prefix} common_metadata.long_seq_metadata (prefill_context_parallel_metadata) = None")
+
+
 class NPUModelRunner(GPUModelRunner):
     def __init__(self, vllm_config: VllmConfig, device: torch.device):
         # TODO(qcs): These manual pad and unpad for GPUModelRunner are
@@ -1886,6 +1959,11 @@ class NPUModelRunner(GPUModelRunner):
                     cascade_attn_prefix_lens=cascade_attn_prefix_lens,
                     num_scheduled_tokens_compressed_list=num_scheduled_tokens_compressed_list,
                 )
+                _print_debug_attn_metadata(
+                    attn_metadata,
+                    common_metadata=spec_decode_common_attn_metadata,
+                    prefix=f"[DEBUG][ModelRunner][execute_model][dcp_rank={self.dcp_rank}]"
+                )
 
             (
                 input_ids,
@@ -1989,8 +2067,6 @@ class NPUModelRunner(GPUModelRunner):
 
                 sample_hidden_states = hidden_states[logits_indices]
                 logits = self.model.compute_logits(sample_hidden_states)
-                print(f"[DEBUG][ModelRunner][dcp_rank={self.dcp_rank}] TARGET OUTPUT: "
-                      f"logits_argmax={logits.argmax(dim=-1)[:min(8, logits.shape[0])].cpu().tolist()}")
             else:
                 # Rare case.
                 assert not self.is_pooling_model
@@ -2002,8 +2078,6 @@ class NPUModelRunner(GPUModelRunner):
                 else:
                     sample_hidden_states = hidden_states[logits_indices]
                     logits = self.model.compute_logits(sample_hidden_states)
-                    print(f"[DEBUG][ModelRunner][dcp_rank={self.dcp_rank}] TARGET OUTPUT: "
-                          f"logits_argmax={logits.argmax(dim=-1)[:min(8, logits.shape[0])].cpu().tolist()}")
 
                 model_output_broadcast_data: dict[str, Any] = {}
                 if logits is not None:
@@ -2972,6 +3046,11 @@ class NPUModelRunner(GPUModelRunner):
             # the attention metadata in directly), and therefore does not want to use
             # padded attention metadata.
             spec_decode_common_attn_metadata = spec_decode_common_attn_metadata.unpadded(num_tokens, num_reqs)
+        _print_debug_attn_metadata(
+            attn_metadata,
+            common_metadata=spec_decode_common_attn_metadata or cm_base,
+            prefix="[DEBUG][ModelRunner][_build_attention_metadata]"
+        )
         return attn_metadata, spec_decode_common_attn_metadata
 
     def _should_build_dummy_attn_metadata(
