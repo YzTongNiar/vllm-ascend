@@ -264,6 +264,7 @@ class AscendSFAMetadataBuilder(MLACommonMetadataBuilder[AscendSFAMetadata]):
         cos, sin = get_cos_and_sin_mla(input_positions, True)
 
         dsa_cp_context = None
+        print('test')
         if self.enable_dsa_cp:
             global_tp_size = get_tp_group().world_size
             num_tokens = num_input_tokens
