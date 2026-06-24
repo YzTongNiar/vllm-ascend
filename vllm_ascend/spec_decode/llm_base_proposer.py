@@ -52,6 +52,7 @@ from vllm_ascend.compilation.acl_graph import ACLGraphWrapper, update_full_graph
 from vllm_ascend.distributed.parallel_state import get_lmhead_tp_group
 from vllm_ascend.ops.triton.spec_decode.utils import prepare_inputs_padded_kernel
 from vllm_ascend.ops.triton.triton_utils import get_vectorcore_num
+from vllm_ascend.spec_decode.utils import compute_sliding_window_block_table
 from vllm_ascend.utils import enable_sp, lmhead_tp_enable, shared_expert_dp_enabled
 
 # Currently we will fix block size to a small one since `num_reqs` can't be too large
@@ -220,6 +221,16 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             self.max_window_blocks = self.window_blocks + 1
             self._sliding_window_full_block_table: torch.Tensor | None = None
             self._sliding_window_start_block_indices: torch.Tensor | None = None
+            # Pre-allocated stable window block table buffer. The Ascend attention
+            # backends capture ``block_table`` by address (weak_ref) and rebind it by
+            # reference on ACL graph replay without copying data, so this buffer's
+            # data_ptr must stay identical across dummy_run (capture) and _propose
+            # (replay). Mirrors self.block_table_tensor_clone (the pcp path).
+            self._sliding_window_block_table_clone = torch.zeros(
+                (self.runner.max_num_reqs, self.max_window_blocks),
+                dtype=torch.int32,
+                device=self.device,
+            )
         else:
             self.draft_window_size = None
 
@@ -610,43 +621,22 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             return
         full_block_table = common_attn_metadata.block_table_tensor
         num_reqs = full_seq_lens.shape[0]
-        K = self.num_speculative_tokens
-        W = self.draft_window_size
-        B = self.block_size
 
-
-        # Final length L+K
-        final_seq_lens = full_seq_lens + K
-        # Window start token
-        start_tokens = (final_seq_lens - W).clamp(min=0)
-        # Align to block boundary
-        start_blocks = (start_tokens // B) * B
-        start_block_indices = (start_blocks // B).to(torch.int64)
-
-        # Dynamically calculate needed blocks per request to handle boundary
-        # misalignment. e.g., W=512, B=128, final_seq_lens=515, start_blocks=0
-        # needs ceil(515/128)=5 blocks, not fixed window_blocks=4.
-        tokens_to_cover = final_seq_lens - start_blocks
-        needed_blocks_per_req = ((tokens_to_cover + B - 1) // B).to(torch.int64)
-        max_needed_blocks = int(needed_blocks_per_req.max().item())
-
-
-        # Use fixed max_window_blocks so tensor shape is constant across
-        # dummy_run (graph capture) and runtime, avoiding ACL graph mismatch.
-        max_blocks = self.max_window_blocks
-        window_block_table = torch.zeros(
-            num_reqs, max_blocks,
-            dtype=full_block_table.dtype, device=full_block_table.device
+        # Compute the cropped window block table into the pre-allocated stable
+        # buffer. The helper is fully vectorized (no .item() / host sync) and
+        # writes in place, so the resulting block_table data_ptr is identical
+        # across ACL graph capture (dummy_run) and replay (_propose).
+        start_block_indices, _ = compute_sliding_window_block_table(
+            full_block_table,
+            full_seq_lens,
+            num_speculative_tokens=self.num_speculative_tokens,
+            window_size=self.draft_window_size,
+            block_size=self.block_size,
+            max_window_blocks=self.max_window_blocks,
+            out=self._sliding_window_block_table_clone,
         )
-        for i in range(num_reqs):
-            start_idx = start_block_indices[i].item()
-            needed = min(needed_blocks_per_req[i].item(), max_blocks)
-            end_idx = start_idx + needed
-            if end_idx <= full_block_table.shape[1]:
-                window_block_table[i, :needed] = full_block_table[i, start_idx:end_idx]
-            else:
-                valid = full_block_table.shape[1] - start_idx
-                window_block_table[i, :valid] = full_block_table[i, start_idx:]
+        # offset-0 view -> same data_ptr as the stable buffer
+        window_block_table = self._sliding_window_block_table_clone[:num_reqs]
 
         # Save original block table and start indices for slot-mapping
         self._sliding_window_full_block_table = full_block_table
@@ -656,7 +646,7 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
         common_attn_metadata.block_table_tensor = window_block_table
         windowed_seq_lens = torch.min(
             full_seq_lens,
-            torch.full_like(full_seq_lens, W)
+            torch.full_like(full_seq_lens, self.draft_window_size)
         )
         common_attn_metadata.seq_lens = windowed_seq_lens
         # Sync CPU-side mirrors so attention backends on host see the same lengths
@@ -668,9 +658,9 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             common_attn_metadata.seq_lens_cpu_upper_bound = windowed_seq_lens.cpu().clone()
 
         # Pre-fill seq_lens_group for multi-step loop
-        for step in range(K):
+        for step in range(self.num_speculative_tokens):
             current_len = full_seq_lens + step
-            windowed_len = torch.min(current_len, torch.full_like(current_len, W))
+            windowed_len = torch.min(current_len, torch.full_like(current_len, self.draft_window_size))
             self.seq_lens_group[step][:num_reqs].copy_(windowed_len)
             self.seq_lens_group[step][num_reqs:].fill_(0)
 
