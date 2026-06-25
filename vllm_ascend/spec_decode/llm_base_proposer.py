@@ -785,6 +785,19 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
                 # ``attn_update_stack_num_spec_norm`` don't double-count.
                 if common_attn_metadata._seq_lens_cpu is not None:
                     common_attn_metadata._seq_lens_cpu = common_attn_metadata.seq_lens_cpu.clone()
+                    # The lines above rebuild seq_lens / seq_lens_cpu from the
+                    # runner's un-windowed tensors (required for FULL-graph
+                    # padding), which discards the sliding-window clamp applied
+                    # by `_apply_sliding_window`. The draft's block_table stays
+                    # cropped to `max_window_blocks` columns, so the FIA kernel
+                    # — which reads `_seq_lens_cpu` -> `seq_lens_list` as the KV
+                    # length — must also be capped at `draft_window_size`, or it
+                    # reads far past the cropped table (OOB DDR read, ACL 507011)
+                    # on contexts longer than the window. `_seq_lens_cpu` is a
+                    # draft-local clone here, so clamping it is safe.
+                    if self.draft_window_size is not None:
+                        common_attn_metadata._seq_lens_cpu.clamp_(
+                            max=self.draft_window_size)
             if common_attn_metadata.num_computed_tokens_cpu is not None:
                 common_attn_metadata.num_computed_tokens_cpu = self._adjust_tensor(
                     common_attn_metadata.num_computed_tokens_cpu, num_reqs_padded
@@ -1609,6 +1622,13 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             common_attn_metadata._seq_lens_cpu[:batch_size] = common_attn_metadata._seq_lens_cpu[:batch_size] + 1
             exceeds_mask_internal = common_attn_metadata._seq_lens_cpu[:batch_size] >= self.max_model_len
             common_attn_metadata._seq_lens_cpu[:batch_size].masked_fill_(exceeds_mask_internal, 1)
+            # Mirror the GPU `seq_lens` window clamp above: the FIA kernel reads
+            # `_seq_lens_cpu` -> `seq_lens_list` as the KV length, so the CPU
+            # mirror must also stay capped at `draft_window_size` while the draft
+            # block_table is cropped, otherwise attention reads past the window.
+            if self.draft_window_size is not None:
+                common_attn_metadata._seq_lens_cpu[:batch_size].clamp_(
+                    max=self.draft_window_size)
         if common_attn_metadata.num_computed_tokens_cpu is not None:
             common_attn_metadata.num_computed_tokens_cpu[:batch_size] += 1
         if self.uses_mrope:
