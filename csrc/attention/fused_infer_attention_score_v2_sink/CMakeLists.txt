@@ -31,12 +31,31 @@ if (BUILD_OPEN_PROJECT)
     )
 endif()
 
-if (BUILD_OPS_RTY_KERNEL)
+# Kernel compile options: add_ops_compile_options must be called
+# unconditionally (it only appends to the autogen custom_compile_options.ini
+# consumed by opc; the BUILD_OPS_RTY_KERNEL branch never runs in this repo's
+# open-project builds, so options placed there were silently dropped).
+if ("ascend950" IN_LIST ASCEND_COMPUTE_UNIT)
+    # A5 (950PR, split cube/vector): route cross-core CV communication via
+    # SSBUF, same as the FlashMLA A5 build (KFC_C310_SSBUF in
+    # basic_api/kernel_utils.h); keep compiler auto-sync ON — the kernel's
+    # hand-rolled C2P/P2C event chains show cross-pipe ordering gaps on
+    # dav-c310 (q=0 lse != log(kvlen), race-pattern partial correctness).
+    add_ops_compile_options(
+        OP_NAME FusedInferAttentionScoreV2Sink
+        OPTIONS --cce-auto-sync=on
+                -Wno-deprecated-declarations
+                -DENABLE_CV_COMM_VIA_SSBUF=true
+    )
+else()
     add_ops_compile_options(
         OP_NAME FusedInferAttentionScoreV2Sink
         OPTIONS --cce-auto-sync=off
                 -Wno-deprecated-declarations
     )
+endif()
+
+if (BUILD_OPS_RTY_KERNEL)
 else()
     add_modules_sources(OPTYPE fused_infer_attention_score_v2_sink ACLNNTYPE aclnn_exclude)
 endif()

@@ -228,8 +228,16 @@ elif [[ "$SOC_VERSION" =~ ^ascend950 ]]; then
         "store_kv_block_metadata"
         "k2q_csr"
         "sparse_attention_score"
-        "flash_mla_with_kvcache"
-        "flash_mla_with_kvcache_metadata"
+        # NOTE(a5_port): flash_mla_with_kvcache{,_metadata} excluded here.
+        # attention/common/op_host/fia_tiling_shape.cpp (pulled in by FlashMLA)
+        # collides at link time with the round_4/5-fixed vendored copy under
+        # fused_infer_attention_score_v2_sink_common/ (same optiling symbols,
+        # 222-line content drift) — both feed the aggregate
+        # ophost_transformer_tiling_obj.  This tree ships FIA v2 sink for A5;
+        # upstream FlashMLA keeps its own delivery.  The FLASH_MLA torch
+        # binding (inline in csrc/torch_binding.cpp) still compiles.
+        "fused_infer_attention_score_v2_sink"
+        "fused_infer_attention_score_v2_sink_metadata"
     )
 
     CUSTOM_OPS=$(IFS=';'; echo "${CUSTOM_OPS_ARRAY[*]}")

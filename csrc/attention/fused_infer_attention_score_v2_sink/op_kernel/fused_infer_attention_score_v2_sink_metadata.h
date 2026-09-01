@@ -24,7 +24,12 @@ namespace optiling {
 constexpr uint32_t AIC_CORE_NUM = 36;
 constexpr uint32_t AIV_CORE_NUM = 72;
 constexpr uint32_t FIASINK_META_SIZE = 1024;
-constexpr uint32_t FIA_MAX_AIC_CORE_NUM = 26;
+// Capacity of the per-core FD-head staging arrays in the MLA kernel's
+// FlashDecode path (loops are bounded by usedCoreNum from metadata, i.e. the
+// caller-reported aic core count: 24 on 910_93, 28 on 950PR).  Keep it aligned
+// with the metadata table capacity (AIC_CORE_NUM / AIC_CORE_NUM*2) so any
+// SoC within the 36/72 table contract stays in bounds.
+constexpr uint32_t FIA_MAX_AIC_CORE_NUM = 36;
 using FIASINK_METADATA_T = int32_t;
 
 constexpr uint32_t AIC_METADATA_SIZE = 10;
