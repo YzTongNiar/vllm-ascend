@@ -10,8 +10,8 @@
 
 #include <vector>
 #include "log/ops_log.h"
-#include "../../fused_infer_attention_score_v2_sink_common/omni_common/include/fallback/fallback_comm.h"
-#include "../../fused_infer_attention_score_v2_sink_common/omni_common/include/fallback/fallback.h"
+#include "../../fused_infer_attention_score_v2_sink_common/upstream_common/include/fallback/fallback_comm.h"
+#include "../../fused_infer_attention_score_v2_sink_common/upstream_common/include/fallback/fallback.h"
 
 #ifdef __cplusplus
 extern "C" {

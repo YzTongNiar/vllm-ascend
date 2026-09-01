@@ -1,6 +1,6 @@
 /**
  * Torch binding for the AICPU metadata operator used by FIA v2 sink.
- * Adapted from the omni-ops ai_infra_fused_infer_attention_sink_metadata
+ * Adapted from the internal FIA metadata binding
  * binding. Attributes are compile-time constants; actual_seq_lengths and
  * actual_seq_lengths_kv are device INT64 [B] tensors. The caller supplies the
  * AIC and AIV core counts.

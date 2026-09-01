@@ -76,7 +76,7 @@ using _aclDestroyBoolArray = int (*)(const aclBoolArray* array);
 using _aclDestroyTensorList = int (*)(const aclTensorList* array);
 
 #define GET_OP_API_FUNC(apiName) reinterpret_cast<_##apiName>(GetOpApiFuncAddr(#apiName))
-#define OMNI_INFER_PATH_MAX 4096
+#define UPSTREAM_INFER_PATH_MAX 4096
 
 inline std::vector<std::string> split_str(std::string s, const std::string &del)
 {
@@ -93,7 +93,7 @@ inline std::vector<std::string> split_str(std::string s, const std::string &del)
 
 inline bool is_file_exist(const std::string &path)
 {
-    if (path.empty() || path.size() > OMNI_INFER_PATH_MAX) {
+    if (path.empty() || path.size() > UPSTREAM_INFER_PATH_MAX) {
         return false;
     }
     return (access(path.c_str(), F_OK) == 0) ? true : false;
@@ -101,10 +101,10 @@ inline bool is_file_exist(const std::string &path)
 
 inline  std::string real_path(const std::string &path)
 {
-    if (path.empty() || path.size() > OMNI_INFER_PATH_MAX) {
+    if (path.empty() || path.size() > UPSTREAM_INFER_PATH_MAX) {
         return "";
     }
-    char realPath[OMNI_INFER_PATH_MAX] = {0};
+    char realPath[UPSTREAM_INFER_PATH_MAX] = {0};
     if (realpath(path.c_str(), realPath) == nullptr) {
         return "";
     }
@@ -153,7 +153,7 @@ inline std::vector<std::string> get_default_custom_lib_path()
     }
 
     if (!is_file_exist(vendors_config_file)) {
-        OP_LOGW("aclnnfallback", "config.ini is not exists or the path length is more than %d", OMNI_INFER_PATH_MAX);
+        OP_LOGW("aclnnfallback", "config.ini is not exists or the path length is more than %d", UPSTREAM_INFER_PATH_MAX);
         return std::vector<std::string>();
     }
 

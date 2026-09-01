@@ -1,6 +1,6 @@
 /**
  * Torch binding for the AICore FIA v2 sink operator, driven by GM metadata.
- * Adapted from the omni-ops npu_fused_infer_attention_sink_v2 binding:
+ * Adapted from the internal npu_fused_infer_attention_sink_v2 binding:
  *   - unused quantization, PSE, and sink parameters are omitted
  *   - returns the (attention_out, softmax_lse) tuple
  *   - calls aclnnFusedInferAttentionScoreV2SinkV3 with device sequence lengths

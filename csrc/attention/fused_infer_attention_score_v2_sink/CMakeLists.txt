@@ -2,14 +2,14 @@
 # V3 entry in op_api/), so the def goes through the op_host_aclnnExc channel
 # (ACLNNTYPE aclnn_exclude) to suppress the auto-generated aclnn wrapper.
 # Template: csrc/attention/sparse_attention_score/op_host/CMakeLists.txt.
-# Sources carried from op_src (omni lineage), flattened to the repo-expected
-# top-level op layout; the omni-lineage common trees remain isolated under
+# Sources carried from op_src (upstream lineage), flattened to the repo-expected
+# top-level op layout; the upstream lineage common trees remain isolated under
 # fused_infer_attention_score_v2_sink_common.
 
 include_directories(
-    ${CMAKE_CURRENT_SOURCE_DIR}/../fused_infer_attention_score_v2_sink_common/omni_common/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../fused_infer_attention_score_v2_sink_common/omni_common/stub/op_api
-    ${CMAKE_CURRENT_SOURCE_DIR}/../fused_infer_attention_score_v2_sink_common/omni_common/stub/op_tiling
+    ${CMAKE_CURRENT_SOURCE_DIR}/../fused_infer_attention_score_v2_sink_common/upstream_common/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../fused_infer_attention_score_v2_sink_common/upstream_common/stub/op_api
+    ${CMAKE_CURRENT_SOURCE_DIR}/../fused_infer_attention_score_v2_sink_common/upstream_common/stub/op_tiling
     ${CMAKE_CURRENT_SOURCE_DIR}/../fused_infer_attention_score_v2_sink_common/attention_common/op_host
     ${CMAKE_CURRENT_SOURCE_DIR}/../fused_infer_attention_score_v2_sink_common/attention_common/op_kernel
     ${CMAKE_CURRENT_SOURCE_DIR}/../fused_infer_attention_score_v2_sink_common/attention_common
