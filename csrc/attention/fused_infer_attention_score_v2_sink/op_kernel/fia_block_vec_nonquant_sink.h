@@ -267,7 +267,8 @@ public:
     GlobalTensor<float> dbgMetaF;  // float 视图 int32[592..]（A': P pre-Muls）
     GlobalTensor<float> dbgMetaF2; // float 视图 int32[824..]（A'': P post-Muls）
     GlobalTensor<float> dbgMetaF4; // float 视图 int32[888..]（E: VEC 自检）
-    GlobalTensor<int16_t> dbgMetaI16; // int16 视图（kw-6 ProcessVec1Vf 布局探针）
+    GlobalTensor<int16_t> dbgMetaI16; // int16 视图（kw-6/7 ProcessVec1Vf 布局探针）
+    GlobalTensor<uint32_t> dbgMetaSel; // int32[600] 窗口选择器（宿主逐次写，多窗全量 dump）
 protected:
 #endif
 };
@@ -1296,12 +1297,15 @@ template <typename FIAT> __aicore__ inline void FiaBlockVecNonQuant<FIAT>::Compu
         // V 管写 → MTE3 dump 同步（kw-3 教训：PipeBarrier<PIPE_V> 不同步跨管）
         SetFlag<HardEvent::V_MTE3>(5);
         WaitFlag<HardEvent::V_MTE3>(5);
-        // dump: dst 前 640 int16 @int16[1184]；src 128 int16 @int16[1824]；sum/max/exp 48 int16 @int16[1952]
-        DataCopy(dbgMetaI16, pDstI16, 640);
-        LocalTensor<int16_t> pSrcI16 = tmpBuff1.GetWithOffset<int16_t>(128, 0);
-        DataCopy(dbgMetaI16[1824 - 1184], pSrcI16, 128);
-        LocalTensor<int16_t> pSlotI16 = tmpBuff1.GetWithOffset<int16_t>(48, 1024);
-        DataCopy(dbgMetaI16[1952 - 1184], pSlotI16, 48);
+        // [kw-7] 多窗口全量 dump：宿主每次调用前写 metadata int32[600]=win（0..18），
+        // 本核 dump tmpBuff1 int16[win*864 .. win*864+864) → metadata int16[1184..2047]。
+        // 19 窗 × 1728B = 全量 32KB 覆盖（tmpBuff1 = 16384 int16）。
+        uint32_t winSel = dbgMetaSel.GetValue(0);
+        if (winSel > 18U) {
+            winSel = 0U;
+        }
+        LocalTensor<int16_t> pWin = tmpBuff1.GetWithOffset<int16_t>(864, winSel * 864 * 2);
+        DataCopy(dbgMetaI16, pWin, 864);
     }
 #endif
     SetMSplitInfo(info.actMBaseSize);
