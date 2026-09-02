@@ -608,6 +608,7 @@ __aicore__ inline void FiaKernelNonQuant<FIAT>::Init(__gm__ uint8_t *query,
         vectorService.dbgMetaF.SetGlobalBuffer((__gm__ float *)metadata + 592U);
         vectorService.dbgMetaF2.SetGlobalBuffer((__gm__ float *)metadata + 824U);
         vectorService.dbgMetaF4.SetGlobalBuffer((__gm__ float *)metadata + 888U);
+        vectorService.dbgMetaI16.SetGlobalBuffer((__gm__ int16_t *)metadata + 1184U);
 #endif
     }
 }

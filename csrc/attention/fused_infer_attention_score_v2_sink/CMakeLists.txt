@@ -15,6 +15,14 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../fused_infer_attention_score_v2_sink_common/attention_common
 )
 
+# [kw-6] A5 SoftmaxFlashV2Compute -> ProcessVec1Vf 移植依赖 attention/common 的
+# arch35 VF 库（FlashMLA 同款机制：depends staging，basename 落 src/common，
+# 内核源以 ../common/... 相对引用）。A3 宏关闭不引用该头，仅多 staging 无副作用。
+if ("ascend950" IN_LIST ASCEND_COMPUTE_UNIT)
+    set(fused_infer_attention_score_v2_sink_depends attention/common CACHE INTERNAL
+        "Dependencies for fused_infer_attention_score_v2_sink")
+endif()
+
 # Kernel-build registration. add_op_to_compiled_list() assumes it is called
 # from <op>/op_host/CMakeLists.txt (OP_NAME = basename(CWD.parent)); this
 # flattened layout puts the CMakeLists at the op top level, which would

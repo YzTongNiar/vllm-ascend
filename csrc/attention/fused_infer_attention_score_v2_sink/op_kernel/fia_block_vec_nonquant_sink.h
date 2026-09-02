@@ -20,6 +20,17 @@
 #include "kernel_tiling/kernel_tiling.h"
 #include "lib/matmul_intf.h"
 #include "lib/matrix/matmul/tiling.h"
+#ifdef FIA_A5_DEBUG_DUMP
+// [kw-6] arch35 VF 库封装进独立命名空间：该头在全局域 using namespace regbaseutil，
+// 会与 AiInfraInferenceAttentionCommon 的 ConstInfo/RunInfo 产生歧义。工具链头
+// （kernel_tensor.h 等）已在前面的标准 include 中以全局域包含（include guard 生效），
+// 此处嵌套包含仅封装 VF 库自身符号。
+namespace FiaVfLib {
+#if __has_include("../../common/op_kernel/arch35/vf/vf_mul_sel_softmaxflashv2_cast_nz.h")
+#include "../../common/op_kernel/arch35/vf/vf_mul_sel_softmaxflashv2_cast_nz.h"
+#endif
+}
+#endif
 #if __has_include("../common/op_kernel/fia_public_define.h")
 #include "fia_public_define.h"
 #include "memory_copy.h"
@@ -252,9 +263,11 @@ public:
     // [A5 dump] region 写入计数（每核独立）+ metadata 尾区直写通道（kernel Init 注入）
     uint32_t dbgACnt = 0;
     uint32_t dbgECnt = 0;
+    uint32_t dbgProbeCnt = 0;
     GlobalTensor<float> dbgMetaF;  // float 视图 int32[592..]（A': P pre-Muls）
     GlobalTensor<float> dbgMetaF2; // float 视图 int32[824..]（A'': P post-Muls）
     GlobalTensor<float> dbgMetaF4; // float 视图 int32[888..]（E: VEC 自检）
+    GlobalTensor<int16_t> dbgMetaI16; // int16 视图（kw-6 ProcessVec1Vf 布局探针）
 protected:
 #endif
 };
@@ -1247,6 +1260,50 @@ __aicore__ inline void FiaBlockVecNonQuant<FIAT>::Vec1SinkCompute(const RunInfo 
 
 template <typename FIAT> __aicore__ inline void FiaBlockVecNonQuant<FIAT>::ComputeVec1(const RunInfo &info)
 {
+#ifdef FIA_A5_DEBUG_DUMP
+    // [kw-6 探针] ProcessVec1Vf dst 布局测定（一次性，AIV0 only）：
+    //   m=2, N=64, scale=1，row0: x_c=0.01c，row1: x_c=0.01c+0.005
+    //   exp 值可按列唯一辨识 → dump dst 前 864 个 bf16（int16 视图写 metadata
+    //   int16[1184..2047] = int32[592..1023]），裁决 k-块步长单位语义。
+    // tmpBuff1 布局(byte): [0,512)=src 2x64f [512,1024)=sharedTmp512B
+    //   [1024,1280)=sum [1280,1536)=max [1536,1792)=expMax [2048,+8448)=dst bf16
+    if (unlikely(dbgProbeCnt < 1 && GetBlockIdx() % 2 == 0)) {
+        dbgProbeCnt++;
+        namespace Fv = FiaVfLib::FaVectorApi;
+        // tmpBuff1(byte): [0,512)=src [512,1024)=tmp512 [1024,1280)=sum [1280,1536)=max
+        //   [1536,1792)=expMax [1792,2048)=empty 区 [2048,+8448)=dst
+        LocalTensor<float> pSrc = tmpBuff1.Get<float>();
+        for (uint32_t c = 0; c < 64; c++) {
+            pSrc.SetValue(c, 0.01f * static_cast<float>(c));
+            pSrc.SetValue(64 + c, 0.01f * static_cast<float>(c) + 0.005f);
+        }
+        pSrc.SetValue(64, 12345.0f); // src 魔数（判探针执行）
+        AscendC::PipeBarrier<PIPE_V>();
+        LocalTensor<uint8_t> pTmp = tmpBuff1.GetWithOffset<uint8_t>(512, 512);
+        LocalTensor<float> pSum = tmpBuff1.GetWithOffset<float>(64, 1024);
+        LocalTensor<float> pMax = tmpBuff1.GetWithOffset<float>(64, 1280);
+        LocalTensor<float> pExp = tmpBuff1.GetWithOffset<float>(64, 1536);
+        LocalTensor<uint8_t> pEmpty = tmpBuff1.GetWithOffset<uint8_t>(256, 1792);
+        LocalTensor<float> pEmptyF = tmpBuff1.GetWithOffset<float>(64, 1792);
+        LocalTensor<int16_t> pDstI16 = tmpBuff1.GetWithOffset<int16_t>(4224, 2048);
+        Duplicate(pDstI16, (int16_t)0x3F3D, 8448 / 2); // dst 魔数前填（判 VF 是否写）
+        AscendC::PipeBarrier<PIPE_V>();
+        LocalTensor<bfloat16_t> pDst = tmpBuff1.GetWithOffset<bfloat16_t>(4224, 2048);
+        Fv::ProcessVec1Vf<float, bfloat16_t, float, false, 64, 64, Fv::OriginNRange::GT_0_AND_LTE_64>(
+            pDst, nullptr, pSum, pMax, pSrc, pExp, pSum, pMax, pEmpty, pEmptyF, pEmpty, pTmp, pEmptyF,
+            2, 64, 0, 0.0f, 0.0f, 1.0f, 1.0f, -1e38f, 1.0f);
+        AscendC::PipeBarrier<PIPE_V>();
+        // V 管写 → MTE3 dump 同步（kw-3 教训：PipeBarrier<PIPE_V> 不同步跨管）
+        SetFlag<HardEvent::V_MTE3>(5);
+        WaitFlag<HardEvent::V_MTE3>(5);
+        // dump: dst 前 640 int16 @int16[1184]；src 128 int16 @int16[1824]；sum/max/exp 48 int16 @int16[1952]
+        DataCopy(dbgMetaI16, pDstI16, 640);
+        LocalTensor<int16_t> pSrcI16 = tmpBuff1.GetWithOffset<int16_t>(128, 0);
+        DataCopy(dbgMetaI16[1824 - 1184], pSrcI16, 128);
+        LocalTensor<int16_t> pSlotI16 = tmpBuff1.GetWithOffset<int16_t>(48, 1024);
+        DataCopy(dbgMetaI16[1952 - 1184], pSlotI16, 48);
+    }
+#endif
     SetMSplitInfo(info.actMBaseSize);
 #if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
     // dav-c310（kw-4 修复）: mode-2 flag 在双 setter（M>16 双 AIV 分行）时 AIC 只等到
