@@ -246,6 +246,21 @@ struct ConstInfo {
     bool isSkipSmallBlock = false;
 };
 
+// ---- dav-c310 (A5, __NPU_ARCH__==3510) 跨核同步适配 ----
+// dav-c220 上 CrossCoreWaitFlag 默认模板 (modeId=0, PIPE_S) 的 wait_flag_dev 为整核
+// 阻塞语义；dav-c310 的 wait 按下发队列生效：PIPE_S 的 wait 只阻塞标量队列，
+// 不约束后续 MTE2/MTE3/FIX 队列上的数据搬运 → cube↔vector 的 GM 中转
+// (mm1Res/vec1Res/mm2Res) 出现确定性脏读/早读。
+// A5 统一改用 intra-block 同步（mode 4，AIC 与其 2 个 AIV 对内）：
+//   - wait/set 必须显式指定消费/生产数据的队列（PIPE_MTE2 读 GM、PIPE_MTE3 写
+//     GM、PIPE_FIX 写 L0C 前）；
+//   - AIC 等待 AIV 时需对对内两个 AIV 各等一次（flagId 与 flagId+16，
+//     官方 arch35 fused_infer_attention_score / FlashMLA 同款写法）。
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+static constexpr uint8_t FIA_CROSS_SYNC_MODE = 4;    // intra-block: AIC <-> its 2 AIVs
+static constexpr uint32_t FIA_CROSS_AIV1_OFFSET = 16; // 对内第二个 AIV 的 flag 偏移
+#endif
+
 struct FusedTransposeInfo {
     // 以下是FlashDecode分支区分的信息
     uint32_t n2Idx = 0;

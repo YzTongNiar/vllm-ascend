@@ -246,6 +246,13 @@ template <typename FIAT> class FiaBlockVecNonQuant {
     LocalTensor<COMPUTE_T> softmaxMaxUb;
     LocalTensor<COMPUTE_T> softmaxSumUb;
     LocalTensor<COMPUTE_T> softmaxExpUb;
+
+#ifdef FIA_A5_DEBUG_DUMP
+    // [A5 dump] region A' 写入计数（每核独立）+ metadata 尾区直写通道（kernel Init 注入）
+    uint32_t dbgACnt = 0;
+    GlobalTensor<float> dbgMetaF;  // float 视图 int32[592..]
+    GlobalTensor<float> dbgMetaF2; // float 视图 int32[824..]
+#endif
 };
 
 template <typename FIAT> __aicore__ inline void FiaBlockVecNonQuant<FIAT>::InitParams(const struct ConstInfo &constInfo)
@@ -575,6 +582,17 @@ __aicore__ inline void FiaBlockVecNonQuant<FIAT>::DealBmm1ResBaseBlock(
     inputQue1.EnQue(mmResUb);
     inputQue1.DeQue<MM1_OUT_T>();
 
+#ifdef FIA_A5_DEBUG_DUMP
+    // [A5 dump] region A': P 矩阵到达 vector 侧时的快照（DataCopy GM->UB 后、softmax 前），
+    // 原始 fp32 直写 metadata 张量尾区（int32[592..815]，AIC/AIV/base 表之外，宿主可读，
+    // 且不会被 attentionOut 输出路径覆写——前几轮写 attentionOut 的探针全部被 Vec2 输出
+    // 覆写，读数无效）。只抓首个块。
+    if (unlikely(dbgACnt < 1 && computeSize <= 224U)) {
+        DataCopy(dbgMetaF, mmResUb, computeSize);
+        dbgACnt++;
+    }
+#endif
+
     ElewiseCompute(info, mmResUb, tmpBuff1, startRow, dealRowCount, columnCount, actualColumnCount);
     AscendC::PipeBarrier<PIPE_V>();
     LocalTensor<uint8_t> softmaxTmpUb = tmpBuff1.Get<uint8_t>();
@@ -754,6 +772,10 @@ __aicore__ inline void FiaBlockVecNonQuant<FIAT>::DealBmm2ResBaseBlock(
     DataCopy(bmm2ResUb, mm2ResGm[srcGmOffset], vec2ComputeSize);
     inputQue1.EnQue(bmm2ResUb);
     inputQue1.DeQue<MM2_OUT_T>();
+
+#ifdef FIA_A5_DEBUG_DUMP
+    // [A5 dump] region C 已移除（写 attentionOut 的探针会被 Vec2 输出覆写，读数无效）
+#endif
 
     // 除第一个循环外，均需要更新中间计算结果
     if (!info.isFirstSInnerLoop) {
@@ -1212,6 +1234,19 @@ template <typename FIAT> __aicore__ inline void FiaBlockVecNonQuant<FIAT>::Compu
     SetMSplitInfo(info.actMBaseSize);
     CrossCoreWaitFlag(constInfo.syncC2V2);
     ProcessVec2SingleBuf(info);
+#ifdef FIA_A5_DEBUG_DUMP
+    // [A5 dump] region B': Vec2 阶段回读当前任务 mm1Res GM slot 终态（fp32 直写 metadata
+    // 尾区 int32[824..887] 的前 64 个）。A' 脏而 B' 干净 => 脏读/早读；同脏 => 写侧错。
+    {
+        uint64_t dbgSlotOff = (info.loop % constInfo.preLoadNum) * constInfo.mmResUbSize;
+        LocalTensor<MM1_OUT_T> dbgIn = inputQue1.AllocTensor<MM1_OUT_T>();
+        DataCopy(dbgIn, mm1ResGm[dbgSlotOff], 64);
+        inputQue1.EnQue(dbgIn);
+        inputQue1.DeQue<MM1_OUT_T>();
+        DataCopy(dbgMetaF2, dbgIn, 64);
+        inputQue1.FreeTensor(dbgIn);
+    }
+#endif
     CrossCoreSetFlag<ConstInfo::FIA_SYNC_MODE2, PIPE_MTE3>(constInfo.syncV2C2);
 }
 
