@@ -557,8 +557,8 @@ __aicore__ inline void FiaKernelNonQuant<FIAT>::Init(__gm__ uint8_t *query,
         matmulService.InitMm1GlobalTensor(mm1ResGm);
         matmulService.InitMm2GlobalTensor(vec1ResGm, mm2ResGm);
 #ifdef FIA_A5_DEBUG_DUMP
-        // [A5 dump] metadata 尾区直写通道（float 视图；D'=int32[896..959]，与 B' 错开）
-        matmulService.dbgMetaF3.SetGlobalBuffer((__gm__ MM1_OUT_T *)metadata + 896U);
+        // [A5 dump] metadata 尾区直写通道（float 视图；D'=int32[960..1023]，与 A''/E 错开）
+        matmulService.dbgMetaF3.SetGlobalBuffer((__gm__ MM1_OUT_T *)metadata + 960U);
 #endif
     } else {
         if constexpr (FLASH_DECODE) {
@@ -603,9 +603,11 @@ __aicore__ inline void FiaKernelNonQuant<FIAT>::Init(__gm__ uint8_t *query,
         vectorService.InitVec2GlobalTensor(vec2ResGm, mm2ResGm);
         vectorService.InitFlashDecodeGlobalTensor(accumOutGm, lseMaxFdGm, lseSumFdGm);
 #ifdef FIA_A5_DEBUG_DUMP
-        // [A5 dump] metadata 尾区直写通道（float 视图；A'=int32[592..], B'=int32[824..]）
+        // [A5 dump] metadata 尾区直写通道（float 视图；A'=int32[592..], A''=int32[824..],
+        // E=int32[888..]）
         vectorService.dbgMetaF.SetGlobalBuffer((__gm__ float *)metadata + 592U);
         vectorService.dbgMetaF2.SetGlobalBuffer((__gm__ float *)metadata + 824U);
+        vectorService.dbgMetaF4.SetGlobalBuffer((__gm__ float *)metadata + 888U);
 #endif
     }
 }

@@ -427,9 +427,11 @@ template <typename FIAT, typename Config = void> class FiaBlockCubeNonQuantGqa {
     ConstInfo constInfo{};
 
 #ifdef FIA_A5_DEBUG_DUMP
+public:
     // [A5 dump] region D': L0C 首块经 fixpipe 直写 metadata 尾区（kernel Init 注入）
     uint32_t dbgFixpCnt = 0;
-    GlobalTensor<MM_OUT_T> dbgMetaF3; // float 视图 int32[824..]
+    GlobalTensor<MM_OUT_T> dbgMetaF3; // float 视图 int32[960..]
+private:
 #endif
 
     // key和value的TensorList原始地址
@@ -1472,7 +1474,7 @@ __aicore__ inline void FiaBlockCubeNonQuantGqa<FIAT, Config>::ComputeMm2(const R
                                                              MM_OUT_T,
                                                              M_SPLIT_SIZE,
                                                              M_SPLIT_SIZE,
-                                                             K_BASE,
+                                                             128, // baseK 仅作 KPP 内部切分粒度；L0B tile 上限由 K_SPLIT_SIZE 分块保证
                                                              AiInfraInferenceCommonFaBaseMatmul::ABLayout::MK,
                                                              AiInfraInferenceCommonFaBaseMatmul::ABLayout::KN>(
                     kpL1Tensor[this->kpL1BufId],
