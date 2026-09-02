@@ -1248,20 +1248,39 @@ __aicore__ inline void FiaBlockVecNonQuant<FIAT>::Vec1SinkCompute(const RunInfo 
 template <typename FIAT> __aicore__ inline void FiaBlockVecNonQuant<FIAT>::ComputeVec1(const RunInfo &info)
 {
     SetMSplitInfo(info.actMBaseSize);
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    // dav-c310（kw-4 修复）: mode-2 flag 在双 setter（M>16 双 AIV 分行）时 AIC 只等到
+    // 第一个 AIV 的 set 即继续，读到慢 AIV 未写完的 P'（M>16 非确定性破损实锤）。
+    // mode-4 intra-block + wait 落在消费队列（读 mm1ResGm 走 MTE2）。
+    CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_MTE2>(constInfo.syncC1V1);
+#else
     CrossCoreWaitFlag(constInfo.syncC1V1);
+#endif
     ProcessVec1SingleBuf(info);
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_MTE3>(constInfo.syncV1C2);
+#else
     CrossCoreSetFlag<ConstInfo::FIA_SYNC_MODE2, PIPE_MTE3>(constInfo.syncV1C2);
+#endif
 }
 
 template <typename FIAT> __aicore__ inline void FiaBlockVecNonQuant<FIAT>::ComputeVec2(const RunInfo &info)
 {
     SetMSplitInfo(info.actMBaseSize);
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_MTE2>(constInfo.syncC2V2);
+#else
     CrossCoreWaitFlag(constInfo.syncC2V2);
+#endif
     ProcessVec2SingleBuf(info);
 #ifdef FIA_A5_DEBUG_DUMP
     // [A5 dump] region B' 已移除（mm1Res slot 已在 round5 证实干净），尾区让位 A''/E
 #endif
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_MTE3>(constInfo.syncV2C2);
+#else
     CrossCoreSetFlag<ConstInfo::FIA_SYNC_MODE2, PIPE_MTE3>(constInfo.syncV2C2);
+#endif
 }
 
 #endif

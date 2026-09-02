@@ -1031,6 +1031,17 @@ __aicore__ inline void FiaBlockCubeNonQuantGqa<FIAT, Config>::LoadAToL0(uint32_t
 {
     auto srcTensor = l1Tensor[mL1Size * subKStart][GetC0Num<T1>() * subMStart];
     auto dstTensor = this->aL0Tensor[dstBufId];
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    // dav-c310（kw-4 修复）：load3d/LOAD3DV2_CONFIG 在本代际读错位 L1——kw-3 纯探针
+    // 裁决：P(q=0)=±2.07e9（应恒 0）且 q 敏感 = A 操作数错位。改用 matmul.h 310 分支
+    // 独立装载函数 LoadDataToL0A<T, MK>（LoadData2D 族；MLA 路径在本仓 A5 验证的同款
+    // L1 staging（ND2NZ, dstNzC0Stride=Align16(m)）⟷ 该函数契约），无 Buffer 框架、
+    // 零事件改动。源基址公式与原实现一致（kL0.start*mL1Size + 16*mL0.start，
+    // 两者均 16 对齐时 k-块/行-分形基址等价）。调用方已传 16 对齐的 subM/subK。
+    AiInfraInferenceCommonFaBaseMatmul::LoadDataToL0A<T1,
+                                                      AiInfraInferenceCommonFaBaseMatmul::ABLayout::MK>(
+        dstTensor, srcTensor, mL1Size, subKSize, subMSize);
+#else
     loadData3DParams.mExtension = subMSize;
     loadData3DParams.kExtension = subKSize;
     loadData3DParams.channelSize = subKSize;
@@ -1043,6 +1054,7 @@ __aicore__ inline void FiaBlockCubeNonQuantGqa<FIAT, Config>::LoadAToL0(uint32_t
 
         ResetLoad3DConfig<M_L1_SPLIT_Size, true>();
     }
+#endif
 }
 
 template <typename FIAT, typename Config>
@@ -1148,9 +1160,20 @@ __aicore__ inline void FiaBlockCubeNonQuantGqa<FIAT, Config>::ComputeMm1(RunInfo
     constexpr uint32_t K_BASE = 128;
     constexpr uint32_t N_BASE = 128;
 
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    // dav-c310（kw-4 修复）: M>16（多 m 分形）路径确定性破损（行带状错，M≤16 全对——
+    // 六门禁族 G1/G2 均为 M≤16 形态）。保守分块：A5 下 M 维全部按 16 行粒度切分，
+    // 使 Q staging(ND2NZ)/A 装载/Mmad/fixpipe 全部处于已验证的单分形域。
+    constexpr uint32_t M_L1_SPLIT_A5 = 16;
+    constexpr uint32_t M_L0_SPLIT_A5 = 16;
+#else
+    constexpr uint32_t M_L1_SPLIT_A5 = M_SPLIT_SIZE;
+    constexpr uint32_t M_L0_SPLIT_A5 = M_BASE;
+#endif
+
     ResetLoad3DConfig<M_SPLIT_SIZE>();
 
-    auto mSlices = m.Split(M_SPLIT_SIZE);
+    auto mSlices = m.Split(M_L1_SPLIT_A5);
     auto kL0Slices = k.Split(K_BASE);
 
     bool canFullLoadQ = (mSlices.size() <= L1_Q_BUFCNT);
@@ -1226,7 +1249,7 @@ __aicore__ inline void FiaBlockCubeNonQuantGqa<FIAT, Config>::ComputeMm1(RunInfo
             }
 
             auto nL0Slices = nL1.Split(N_BASE);
-            for (auto &mL0 : mL1.Split(M_BASE)) {
+            for (auto &mL0 : mL1.Split(M_L0_SPLIT_A5)) {
                 for (auto &nL0 : nL0Slices) {
                     WaitFlag<HardEvent::FIX_M>(L0C_EVENT0 + this->cL0BufId);
 
@@ -1330,7 +1353,13 @@ __aicore__ inline void FiaBlockCubeNonQuantGqa<FIAT, Config>::ComputeMm1(RunInfo
         }
     }
 #endif
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    // dav-c310: intra-block 广播需对对内两个 AIV 各置一次
+    CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncC1V1);
+    CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncC1V1 + FIA_CROSS_AIV1_OFFSET);
+#else
     CrossCoreSetFlag<ConstInfo::FIA_SYNC_MODE2, PIPE_FIX>(constInfo.syncC1V1);
+#endif
 }
 
 template <typename FIAT, typename Config>
@@ -1343,7 +1372,13 @@ __aicore__ inline void FiaBlockCubeNonQuantGqa<FIAT, Config>::ComputeMm2(const R
         }
     }
 
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    // dav-c310: wait 落在消费队列（CopyPToL1 走 MTE2 读 P'）；双 AIV 各等一次
+    CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_MTE2>(constInfo.syncV1C2);
+    CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_MTE2>(constInfo.syncV1C2 + FIA_CROSS_AIV1_OFFSET);
+#else
     CrossCoreWaitFlag(constInfo.syncV1C2);
+#endif
 #if !DEBUG_DISABLE_C2
     constexpr uint32_t M_SPLIT_SIZE = 128;
     // L0B 半区容量 = L0B_PP_SIZE 元素, V tile 占用 = subK × headDim。
@@ -1370,7 +1405,14 @@ __aicore__ inline void FiaBlockCubeNonQuantGqa<FIAT, Config>::ComputeMm2(const R
     vL1Snapshot.firstBufId = this->vL1BufId;
     vL1Snapshot.signature = vCoord;
 
-    for (auto &mL1 : m.Split(M_SPLIT_SIZE)) {
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    // dav-c310（kw-4 修复）: 同 mm1，A5 下 M 维按 16 行粒度切分（P' staging/mmad/
+    // fixpipe 限制在单分形域；mm2 的 mL1 同时是 Mmad 的 m）
+    constexpr uint32_t M_L1_SPLIT_MM2_A5 = 16;
+#else
+    constexpr uint32_t M_L1_SPLIT_MM2_A5 = M_SPLIT_SIZE;
+#endif
+    for (auto &mL1 : m.Split(M_L1_SPLIT_MM2_A5)) {
         WaitFlag<HardEvent::FIX_M>(L0C_EVENT0 + this->cL0BufId);
 
         int32_t kL1Id = -1;
@@ -1472,7 +1514,12 @@ __aicore__ inline void FiaBlockCubeNonQuantGqa<FIAT, Config>::ComputeMm2(const R
             WaitFlag<HardEvent::M_FIX>(L0C_EVENT0 + this->cL0BufId);
         }
         if (mL1.start == 0) {
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+            CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncV2C2);
+            CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncV2C2 + FIA_CROSS_AIV1_OFFSET);
+#else
             CrossCoreWaitFlag(constInfo.syncV2C2);
+#endif
         }
         FixpipeCToGM<OutFormat>(mmResGm,
                                 this->cL0BufId,
@@ -1487,6 +1534,11 @@ __aicore__ inline void FiaBlockCubeNonQuantGqa<FIAT, Config>::ComputeMm2(const R
         this->cL0BufId = (this->cL0BufId + 1) % L0C_BUFCNT;
     }
 #endif
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncC2V2);
+    CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncC2V2 + FIA_CROSS_AIV1_OFFSET);
+#else
     CrossCoreSetFlag<ConstInfo::FIA_SYNC_MODE2, PIPE_FIX>(constInfo.syncC2V2);
+#endif
 }
 #endif // FIA_BLOCK_CUBE_NONQUANT_GQA_SINK_H

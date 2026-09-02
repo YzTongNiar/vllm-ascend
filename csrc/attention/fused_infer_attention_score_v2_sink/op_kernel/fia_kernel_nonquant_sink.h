@@ -1252,7 +1252,11 @@ template <typename FIAT> __aicore__ inline void FiaKernelNonQuant<FIAT>::FlashAt
     bool isS1GFirstBlock = true; // 在constInfo.keySinkNumber场景下，每个S1G处理的第一个block块是sink块，需特殊适配
 
     if ASCEND_IS_AIV {
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+        CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_MTE3>(constInfo.syncV2C2);
+#else
         CrossCoreSetFlag<ConstInfo::FIA_SYNC_MODE2, PIPE_MTE3>(constInfo.syncV2C2);
+#endif
     }
 
     while (shouldDispatchTask || shouldExecuteTask) {
@@ -1289,7 +1293,12 @@ template <typename FIAT> __aicore__ inline void FiaKernelNonQuant<FIAT>::FlashAt
     }
 
     if ASCEND_IS_AIC {
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+        CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncV2C2);
+        CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncV2C2 + FIA_CROSS_AIV1_OFFSET);
+#else
         CrossCoreWaitFlag(constInfo.syncV2C2);
+#endif
     }
 }
 template <typename FIAT> __aicore__ inline void FiaKernelNonQuant<FIAT>::Process()
