@@ -249,8 +249,9 @@ template <typename FIAT> class FiaBlockVecNonQuant {
 
 #ifdef FIA_A5_DEBUG_DUMP
 public:
-    // [A5 dump] region A' 写入计数（每核独立）+ metadata 尾区直写通道（kernel Init 注入）
+    // [A5 dump] region 写入计数（每核独立）+ metadata 尾区直写通道（kernel Init 注入）
     uint32_t dbgACnt = 0;
+    uint32_t dbgECnt = 0;
     GlobalTensor<float> dbgMetaF;  // float 视图 int32[592..]（A': P pre-Muls）
     GlobalTensor<float> dbgMetaF2; // float 视图 int32[824..]（A'': P post-Muls）
     GlobalTensor<float> dbgMetaF4; // float 视图 int32[888..]（E: VEC 自检）
@@ -400,11 +401,6 @@ template <typename FIAT> __aicore__ inline void FiaBlockVecNonQuant<FIAT>::Proce
         return;
     }
     uint32_t mSplitSize = BASE_BLOCK_MAX_ELEMENT_NUM / info.actualSingleProcessSInnerSizeAlign;
-#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
-    // dav-c310: 手写 softmax 的 scratch（tmpBuff1 32KB）需同时容纳 P 副本(<=4096 fp32)
-    // 与行级 scratch 区，A5 下把单次处理的块大小减半
-    mSplitSize = (BASE_BLOCK_MAX_ELEMENT_NUM / 2) / info.actualSingleProcessSInnerSizeAlign;
-#endif
     if constexpr (!SOFTMAX_WITH_BRC) {
         uint32_t alignVal = AiInfraInferenceCommonFaBaseVector::BYTE_BLOCK / sizeof(COMPUTE_T);
         // 向下8/16对齐是因为UB操作起始地址需32B对齐
@@ -601,12 +597,13 @@ __aicore__ inline void FiaBlockVecNonQuant<FIAT>::DealBmm1ResBaseBlock(
     ElewiseCompute(info, mmResUb, tmpBuff1, startRow, dealRowCount, columnCount, actualColumnCount);
 
 #ifdef FIA_A5_DEBUG_DUMP
-    // [A5 dump] region A'': ElewiseCompute（Muls 缩放）之后的快照 —— 判别 Muls 是否把
-    // 干净 P 变垃圾（metadata int32[240..279]，取前 64 即可）
+    // [A5 dump] region A'': ElewiseCompute（Muls 缩放）之后的快照（metadata int32[824..887]）
     // region E: VEC 自检 —— Duplicate(1.0)→Muls(0.5)→Add 自身，期望 64 个 1.0
-    // （metadata int32[300..363]）。A'' 脏且 E 干净 => Muls 寻址/语义问题；E 脏 =>
-    // plain VEC 层在 dav-c310 整体失效。
-    if (unlikely(dbgACnt == 1)) {
+    // （metadata int32[888..951]）。A'' 脏且 E 干净 => Muls 寻址/语义问题；E 脏 =>
+    // plain VEC 层在 dav-c310 整体失效。E 用独立计数器在首个块即触发（原 dbgACnt==1
+    // 条件在单块场景永不满足）；E 借用 tmpBuff1 头部 64 float，dump 后即被 softmax
+    // tmp 复用覆写，无残留影响。
+    if (unlikely(dbgECnt < 1)) {
         DataCopy(dbgMetaF2, mmResUb, 64);
         LocalTensor<float> vecTestUb = tmpBuff1.Get<float>();
         Duplicate(vecTestUb, 1.0f, 64);
@@ -616,7 +613,7 @@ __aicore__ inline void FiaBlockVecNonQuant<FIAT>::DealBmm1ResBaseBlock(
         Add(vecTestUb, vecTestUb, vecTestUb, 64);
         AscendC::PipeBarrier<PIPE_V>();
         DataCopy(dbgMetaF4, vecTestUb, 64);
-        dbgACnt++;
+        dbgECnt++;
     }
 #endif
     AscendC::PipeBarrier<PIPE_V>();
@@ -710,128 +707,8 @@ __aicore__ inline void FiaBlockVecNonQuant<FIAT>::SoftmaxFlashV2Compute(const Ru
                                                                         uint32_t columnCount,
                                                                         uint32_t actualColumnCount)
 {
-#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
-    // dav-c310: SoftmaxFlashV2 库调用在本代际失效（round5 dump：P 输入逐位正确、
-    // lse 确定性垃圾且三连跑逐位相同）。改为 vector_common.h 的 VF 原语手写在线
-    // softmax（RowMax/RowSum + 行广播 Sub + Exp/Mul/Add），输出槽位与布局和原
-    // SoftmaxFlashV2 契约完全一致：
-    //   mmResUb            <- exp(x - newMax)（未归一化，供 mm2 与 Vec2 归一）
-    //   softmaxMaxUb[slot] <- newMax（非BRC: 每行 1 个 packed；BRC: 每行 8 个广播）
-    //   softmaxSumUb[slot] <- sumNew = sum(exp(x-newMax)) + sumOld*exp(oldMax-newMax)
-    //   softmaxExpUb[slot] <- expScale = exp(oldMax - newMax)（Vec2 反缩放旧累加）
-    // scratch（softmaxTmpUb=float 视图，依赖 ProcessVec1SingleBuf 的 A5 mSplitSize
-    // 减半保证 computeSize<=4096）：
-    //   tmpX[0,4096) maxP[4096,4224) maxBrc[4224,5248) newSumP[5248,5376)
-    //   newSumBrc[5376,6400) scale[6400,7424)
-    {
-        namespace Fvc = AiInfraInferenceCommonFaBaseVector;
-        constexpr uint32_t TMP_X_CAP = 4096;
-        constexpr uint32_t OFF_MAX_P = TMP_X_CAP;
-        constexpr uint32_t OFF_MAX_BRC = OFF_MAX_P + 128;
-        constexpr uint32_t OFF_SUM_P = OFF_MAX_BRC + 1024;
-        constexpr uint32_t OFF_SUM_BRC = OFF_SUM_P + 128;
-        constexpr uint32_t OFF_SCALE = OFF_SUM_BRC + 1024;
-        LocalTensor<float> tmpF = softmaxTmpUb.ReinterpretCast<float>();
-        LocalTensor<float> tmpX = tmpF;
-        LocalTensor<float> maxP = tmpF[OFF_MAX_P];
-        LocalTensor<float> maxBrc = tmpF[OFF_MAX_BRC];
-        LocalTensor<float> newSumP = tmpF[OFF_SUM_P];
-        LocalTensor<float> newSumBrc = tmpF[OFF_SUM_BRC];
-        LocalTensor<float> scaleUb = tmpF[OFF_SCALE];
-        uint32_t computeSize = dealRowCount * columnCount;
-        uint32_t rowSpan = SOFTMAX_WITH_BRC ? (dealRowCount * this->brcbNum) : dealRowCount;
-
-        uint32_t baseOffset = mSplitInfo.nBufferStartM / 2 + startRow;
-        if constexpr (SOFTMAX_WITH_BRC) {
-            baseOffset = baseOffset * this->brcbNum;
-        }
-        uint32_t outIdx = info.loop % (constInfo.preLoadNum);
-        uint32_t softmaxOutOffset = outIdx * SOFTMAX_TMP_BUFFER_SIZE / sizeof(COMPUTE_T) + baseOffset;
-        LocalTensor<COMPUTE_T> inSumTensor;
-        LocalTensor<COMPUTE_T> inMaxTensor;
-        if (info.isFirstSInnerLoop) {
-            inMaxTensor = softmaxMaxDefaultUb;
-            inSumTensor = softmaxSumDefaultUb;
-        } else {
-            uint32_t inIdx = (info.loop - 1) % (constInfo.preLoadNum);
-            inMaxTensor = softmaxMaxUb[inIdx * SOFTMAX_TMP_BUFFER_SIZE / sizeof(COMPUTE_T) + baseOffset];
-            inSumTensor = softmaxSumUb[inIdx * SOFTMAX_TMP_BUFFER_SIZE / sizeof(COMPUTE_T) + baseOffset];
-        }
-
-        // 1) 行最大值（tmpX 破坏性归约，先备份 P）
-        DataCopy(tmpX, mmResUb, computeSize);
-        AscendC::PipeBarrier<PIPE_V>();
-        Fvc::RowMaxForLongColumnCount(maxP, tmpX, dealRowCount, columnCount, actualColumnCount);
-        AscendC::PipeBarrier<PIPE_V>();
-        Brcb(maxBrc, maxP, (dealRowCount + this->brcbNum - 1) / this->brcbNum, {1, this->brcbNum});
-        AscendC::PipeBarrier<PIPE_V>();
-
-        // 2) 行广播减 newMax（镜像 RowMuls 的 repeat 参数：src1=[rows,8] brc，列块间
-        //    复用同一 brc 向量），覆盖全 columnCount（含对齐尾列，保持 exp 有限）
-        {
-            uint32_t repeatElementNum = Fvc::FP32_REPEAT_ELEMENT_NUM;  // 64
-            uint32_t blockElementNum = Fvc::FP32_BLOCK_ELEMENT_NUM;    // 8
-            uint32_t dLoop = columnCount / repeatElementNum;
-            uint32_t dRemain = columnCount % repeatElementNum;
-            AscendC::BinaryRepeatParams subParams;
-            subParams.src0BlkStride = 1;
-            subParams.src1BlkStride = 0;
-            subParams.dstBlkStride = 1;
-            subParams.src0RepStride = columnCount / blockElementNum;
-            subParams.src1RepStride = 1;
-            subParams.dstRepStride = columnCount / blockElementNum;
-            uint32_t offset = 0;
-            for (uint32_t i = 0; i < dLoop; i++) {
-                Sub(mmResUb[offset], mmResUb[offset], maxBrc, repeatElementNum, dealRowCount, subParams);
-                offset += repeatElementNum;
-            }
-            if (dRemain > 0) {
-                Sub(mmResUb[dLoop * repeatElementNum], mmResUb[dLoop * repeatElementNum], maxBrc, dRemain,
-                    dealRowCount, subParams);
-            }
-        }
-        AscendC::PipeBarrier<PIPE_V>();
-        Exp(mmResUb, mmResUb, computeSize);
-        AscendC::PipeBarrier<PIPE_V>();
-
-        // 3) 行和（tmpX 再次破坏性归约，先备份 exp 值）
-        DataCopy(tmpX, mmResUb, computeSize);
-        AscendC::PipeBarrier<PIPE_V>();
-        Fvc::RowSumForLongColumnCount(newSumP, tmpX, dealRowCount, columnCount, actualColumnCount);
-        AscendC::PipeBarrier<PIPE_V>();
-
-        // 4) 在线折叠：scale=exp(oldMax-newMax); sum=newSum+oldSum*scale
-        //    （首轮 oldMax=-inf/oldSum=0，softmaxMax/SumDefaultUb 已置初值）
-        if constexpr (SOFTMAX_WITH_BRC) {
-            Brcb(newSumBrc, newSumP, (dealRowCount + this->brcbNum - 1) / this->brcbNum, {1, this->brcbNum});
-            AscendC::PipeBarrier<PIPE_V>();
-            Sub(scaleUb, inMaxTensor, maxBrc, rowSpan);
-            AscendC::PipeBarrier<PIPE_V>();
-            Exp(scaleUb, scaleUb, rowSpan);
-            AscendC::PipeBarrier<PIPE_V>();
-            Mul(scaleUb, inSumTensor, scaleUb, rowSpan);
-            AscendC::PipeBarrier<PIPE_V>();
-            Add(newSumBrc, newSumBrc, scaleUb, rowSpan);
-            AscendC::PipeBarrier<PIPE_V>();
-            DataCopy(softmaxMaxUb[softmaxOutOffset], maxBrc, rowSpan);
-            DataCopy(softmaxSumUb[softmaxOutOffset], newSumBrc, rowSpan);
-            DataCopy(softmaxExpUb[softmaxOutOffset], scaleUb, rowSpan);
-        } else {
-            Sub(scaleUb, inMaxTensor, maxP, rowSpan);
-            AscendC::PipeBarrier<PIPE_V>();
-            Exp(scaleUb, scaleUb, rowSpan);
-            AscendC::PipeBarrier<PIPE_V>();
-            Mul(scaleUb, inSumTensor, scaleUb, rowSpan);
-            AscendC::PipeBarrier<PIPE_V>();
-            Add(newSumP, newSumP, scaleUb, rowSpan);
-            AscendC::PipeBarrier<PIPE_V>();
-            DataCopy(softmaxMaxUb[softmaxOutOffset], maxP, rowSpan);
-            DataCopy(softmaxSumUb[softmaxOutOffset], newSumP, rowSpan);
-            DataCopy(softmaxExpUb[softmaxOutOffset], scaleUb, rowSpan);
-        }
-        AscendC::PipeBarrier<PIPE_V>();
-    }
-#else // __NPU_ARCH__ == 3510
+    // [kw-3 诊断回退] A5 下也走原 SoftmaxFlashV2 库路径（手写版与 KPP 叠加时死锁，
+    // 待二分；本轮只保留 A'/A''/E 探针做方向裁决）
     SoftMaxShapeInfo srcShape{dealRowCount, columnCount, dealRowCount, actualColumnCount};
     SoftMaxTiling newTiling =
         SoftMaxFlashV2TilingFunc(srcShape, sizeof(COMPUTE_T), sizeof(COMPUTE_T), softmaxTmpUb.GetSize(), true, false);
@@ -876,7 +753,6 @@ __aicore__ inline void FiaBlockVecNonQuant<FIAT>::SoftmaxFlashV2Compute(const Ru
             newTiling,
             srcShape);
     }
-#endif // __NPU_ARCH__ == 3510
 }
 
 template <typename FIAT> __aicore__ inline void FiaBlockVecNonQuant<FIAT>::ProcessVec2SingleBuf(const RunInfo &info)

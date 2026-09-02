@@ -808,21 +808,13 @@ __aicore__ inline void FiaBlockCubeNonQuantGqa<FIAT, Config>::InitBuffers(TPipe 
     pipe->InitBuffer(L1_K_SINK, L1_K_SINK_SIZE * L1_K_SINK_BUFCNT * sizeof(KV_T));
     kSinkL1Tensor.Init(L1_K_SINK.Get<KV_T>());
 
-    // L0A
-#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
-    // dav-c310: L0A/L0B 由 BufferManager 分配（各 32KB×2，总量与 A3 TBuf 路径一致）
-    l0aBufferManager.Init(pipe, L0A_PP_SIZE * 2 * sizeof(Q_T));
-    l0bBufferManager.Init(pipe, L0B_PP_SIZE * 2 * sizeof(KV_T));
-    mmL0ABuffers.Init(l0aBufferManager, L0A_PP_SIZE * sizeof(Q_T));
-    mmL0BBuffers.Init(l0bBufferManager, L0B_PP_SIZE * sizeof(KV_T));
-#else
+    // L0A [kw-3 诊断回退] A5 下也走原 TBuf L0A/L0B（KPP Buffer 版死锁待二分）
     pipe->InitBuffer(L0_A, L0A_PP_SIZE * 2 * sizeof(Q_T));
     aL0Tensor.Init(L0_A.Get<Q_T>());
 
     // L0B
     pipe->InitBuffer(L0_B, L0B_PP_SIZE * 2 * sizeof(KV_T));
     bL0Tensor.Init(L0_B.Get<KV_T>());
-#endif
 
     // L0C
     pipe->InitBuffer(L0_C, L0C_PP_SIZE * 2 * sizeof(MM_OUT_T));
@@ -858,10 +850,6 @@ template <typename FIAT, typename Config> __aicore__ inline void FiaBlockCubeNon
     WaitFlag<HardEvent::M_MTE1>(L0AB_EVENT1);
     WaitFlag<HardEvent::FIX_M>(L0C_EVENT0);
     WaitFlag<HardEvent::FIX_M>(L0C_EVENT1);
-#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
-    mmL0ABuffers.Uninit(l0aBufferManager);
-    mmL0BBuffers.Uninit(l0bBufferManager);
-#endif
 }
 
 template <typename FIAT, typename Config>
@@ -1242,42 +1230,8 @@ __aicore__ inline void FiaBlockCubeNonQuantGqa<FIAT, Config>::ComputeMm1(RunInfo
                 for (auto &nL0 : nL0Slices) {
                     WaitFlag<HardEvent::FIX_M>(L0C_EVENT0 + this->cL0BufId);
 
-#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
-                    // dav-c310: L1->L0A/L0B 装载改走 matmul.h 的 310 分支装载器
-                    // (LoadData2D 族 + Buffer 框架事件)，与 MLA 路径(本仓 A5 已验证)
-                    // 同款；本文件手搓的 load3d/load2d-v1 组合在 dav-c310 无成功先例
-                    // (matmul.h 自身在 __CCE_AICORE__==310 分支整体切换到 LoadData2D 族)。
-                    // L1 staging (ND2NZ, dstNzC0Stride=Align16(n)) 与该装载器约定一致，
-                    // 无需改动（round5 dump 证实两条装载路径结果一致且 L0C 正确）。
-                    // 限制：A5 暂按 mL0 单块(<=128)整块装载，M>128 的 mL1 复用场景
-                    // 门禁族未覆盖(需 mL0 级 staging，后续如需再放开)。
-                    {
-                        AiInfraInferenceCommonFaBaseMatmul::MMParam mm1Param{};
-                        mm1Param.singleM = mL0.AlignedSize();
-                        mm1Param.singleN = nL0.AlignedSize();
-                        mm1Param.singleK = k.sizeAct;
-                        mm1Param.isLeftTranspose = false;
-                        mm1Param.isRightTranspose = false;
-                        mm1Param.isOutKFisrt = true; // 每个 (mL0,nL0) tile 的首个 k 分块初始化 L0C
-                        mm1Param.unitFlag = 0;
-                        const LocalTensor<KV_T> &mm1BL1 =
-                            unlikely(info.isSinkTensor) ? kSinkL1Tensor[0] : kpL1Tensor[tmpBufId];
-                        AiInfraInferenceCommonFaBaseMatmul::MatmulKPP<Q_T,
-                                                                     KV_T,
-                                                                     MM_OUT_T,
-                                                                     M_BASE,
-                                                                     N_BASE,
-                                                                     K_BASE,
-                                                                     AiInfraInferenceCommonFaBaseMatmul::ABLayout::MK,
-                                                                     AiInfraInferenceCommonFaBaseMatmul::ABLayout::NK>(
-                            qL1Tensor[qBufId],
-                            mm1BL1,
-                            mmL0ABuffers,
-                            mmL0BBuffers,
-                            this->cL0Tensor[this->cL0BufId],
-                            mm1Param);
-                    }
-#else
+                    // [kw-3 诊断回退] A5 下也走原 load3d 装载路径（KPP 版死锁待二分，
+                    // 本轮只保留 D' 探针做 Q 路径裁决；详见 MIGRATION_NOTES.md P4 续）
                     for (auto &kL0 : kL0Slices) {
                         WaitFlag<HardEvent::M_MTE1>(L0AB_EVENT0 + this->abL0BufId);
 
@@ -1328,7 +1282,6 @@ __aicore__ inline void FiaBlockCubeNonQuantGqa<FIAT, Config>::ComputeMm1(RunInfo
                         SetFlag<HardEvent::M_MTE1>(L0AB_EVENT0 + this->abL0BufId);
                         this->abL0BufId = (this->abL0BufId + 1) % L0AB_BUFCNT;
                     }
-#endif // __NPU_ARCH__ == 3510
                     if constexpr (!CFG::ENABLE_UNIFLAG) {
                         SetFlag<HardEvent::M_FIX>(L0C_EVENT0 + this->cL0BufId);
                         WaitFlag<HardEvent::M_FIX>(L0C_EVENT0 + this->cL0BufId);
@@ -1455,36 +1408,7 @@ __aicore__ inline void FiaBlockCubeNonQuantGqa<FIAT, Config>::ComputeMm2(const R
                 vBufId = (vL1Snapshot.firstBufId + kL1Id) % L1_V_BUFCNT;
             }
 
-#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
-            // dav-c310: 同 mm1，mm2 的 L1->L0A/L0B 装载改走 matmul.h 310 分支装载器
-            //（A=P' 为 MK、B=V 为 KN，与 MLA mm2 同款）。KPP 按 baseK=K_BASE 内部切 k，
-            // 实际 L0B tile = min(singleK, K_BASE) × singleN；D=192 时 K_SPLIT_SIZE 按
-            // L0B 半区容量取 80，tile 80×192×2B=30KB <= 32KB 半区，D<=128 时 128×128=32KB。
-            {
-                AiInfraInferenceCommonFaBaseMatmul::MMParam mm2Param{};
-                mm2Param.singleM = mL1.AlignedSize();
-                mm2Param.singleN = n.AlignedSize();
-                mm2Param.singleK = kL1.sizeAct;
-                mm2Param.isLeftTranspose = false;
-                mm2Param.isRightTranspose = false;
-                mm2Param.isOutKFisrt = (kL1.start == 0); // L0C 跨 kL1 块累加，仅首块初始化
-                mm2Param.unitFlag = 0;
-                AiInfraInferenceCommonFaBaseMatmul::MatmulKPP<KV_T,
-                                                             KV_T,
-                                                             MM_OUT_T,
-                                                             M_SPLIT_SIZE,
-                                                             M_SPLIT_SIZE,
-                                                             128, // baseK 仅作 KPP 内部切分粒度；L0B tile 上限由 K_SPLIT_SIZE 分块保证
-                                                             AiInfraInferenceCommonFaBaseMatmul::ABLayout::MK,
-                                                             AiInfraInferenceCommonFaBaseMatmul::ABLayout::KN>(
-                    kpL1Tensor[this->kpL1BufId],
-                    vL1Tensor[vBufId],
-                    mmL0ABuffers,
-                    mmL0BBuffers,
-                    this->cL0Tensor[this->cL0BufId],
-                    mm2Param);
-            }
-#else
+            // [kw-3 诊断回退] A5 下也走原 load3d 装载路径（同 mm1）
             for (auto &kL0 : kL1.Split(K_BASE)) {
                 WaitFlag<HardEvent::M_MTE1>(L0AB_EVENT0 + this->abL0BufId);
 
@@ -1522,7 +1446,6 @@ __aicore__ inline void FiaBlockCubeNonQuantGqa<FIAT, Config>::ComputeMm2(const R
                 SetFlag<HardEvent::M_MTE1>(L0AB_EVENT0 + this->abL0BufId);
                 this->abL0BufId = (this->abL0BufId + 1) % L0AB_BUFCNT;
             }
-#endif // __NPU_ARCH__ == 3510
             SetFlag<HardEvent::MTE1_MTE2>(KP_EVENT0 + this->kpL1BufId);
             if (likely(!info.isSinkTensor)) {
                 ++this->kpL1BufId;
