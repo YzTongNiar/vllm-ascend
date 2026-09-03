@@ -683,6 +683,23 @@ __aicore__ inline void FiaKernelNonQuantMla<FIAT, CubeBlockType, VecBlockType, F
     if (((s2Cur + 1) * constInfo.s2BaseSize) > info.actS2Size) {
         info.actualSingleProcessSInnerSize = info.actS2Size - s2Cur * constInfo.s2BaseSize;
     }
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    // dav-c310 (kw-10)：末 S2 循环为部分宽（0 < 尾宽 < s2BaseSize）时，mm2 A/B 侧
+    // L1/L0 tile 的装载-消费窗口会消费 tile 中上一循环（最后一个完整 512 块）的残留
+    // → 该块贡献被部分重放（输出 +~1 块权重、恒正、lse 不受影响；host 实验链：杀上一
+    // 完整块 K 即塌缩、脏窗口随布局漂移——G=8 布局为尾宽 [48,128]，C10 的 G=2 小 M
+    // 布局含 192/256）。修法：把部分尾循环的"处理宽度"膨胀为完整 s2BaseSize —— 完整
+    // 循环是一切已测布局中从未出现脏的普适类。pad 列 [kv, kv+512) 被 sm3 suffix-causal
+    // mask 置 -inf → P=0、lse/分母不变；pad 列的 K/V 经 block table padding（0 号池块）
+    // 读取，分数被 mask，不参与结果。宽度在此单一真值点膨胀后，V1 softmax/P staging、
+    // mm1/mm2 装载与切 chunk 全链路自动一致。长 KV case 尾宽=0 零代价；短尾 case 仅
+    // 末循环补足到整块（每 batch 至多 1 个循环）。仅门控 attenMaskFlag（sm0 无 mask
+    // 不能膨胀——现网 sm0 case 尾宽均为 0，路径不变）；A3 (c220) 零变化。
+    if (constInfo.attenMaskFlag && info.actualSingleProcessSInnerSize > 0U &&
+        info.actualSingleProcessSInnerSize < constInfo.s2BaseSize) {
+        info.actualSingleProcessSInnerSize = constInfo.s2BaseSize;
+    }
+#endif
     info.actualSingleProcessSInnerSizeAlign =
         Align((uint32_t)info.actualSingleProcessSInnerSize, (uint32_t)AiInfraInferenceCommonFaBaseVector::BYTE_BLOCK);
 
