@@ -725,16 +725,36 @@ __aicore__ inline void MatmulKPP(const LocalTensor<A> &aL1Tensor,
         l0aBuffer.Wait<HardEvent::M_MTE1>(); // mte1等Matmul:上一轮matmul完成后才能搬运新数据到L0A
         LocalTensor<A> L0ATensor = l0aBuffer.GetTensor<A>();
 #if ((__CCE_AICORE__ == 310) || (defined __DAV_310R6__) || (__NPU_ARCH__ == 5102))
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+        // dav-c310（kw-8 MLA 修复）: 下方独立循环版 LoadDataToL0A/B（LoadData2DParams 循环）
+        // 在多 m 分形（singleM>16）时确定性破损（GQA kw-4 行带状证据：M≤16 全对、M>16 带错，
+        // M-16 分块绕过后才全绿）；FlashMLA 在 A5 用 V2 泛型（LoadData2DParamsV2 单发）且
+        // M=64/128 全通过。A5 的 KPP 改走 V2 泛型重载（该重载在 __CCE_AICORE__==310 下生效，
+        // 无 AL 模板参——方向由 mmParam.isLeftTranspose/isRightTranspose 决定：
+        //   A 侧 MK 布局 → isLeftTranspose=false（MLA mm1/mm2 均如此）
+        //   B 侧 NK 布局（L1 N-major）→ V2 需转置装载 → isRightTranspose=false
+        //   B 侧 KN 布局（L1 K-major）→ V2 不转置 → isRightTranspose=true（由 BL 推导）
+        // 消费方：本仓 MLA cube mm1(NK)/mm2(KN)（GQA 不经 KPP，本改动不影响其 bit 全绿路径）。
+        LoadDataToL0A<A>(L0ATensor, aL1Tensor, param, k * L1Aoffset, kSplitSizeAlign, param.singleM);
+#else
         LoadDataToL0A<A, AL>(
             L0ATensor, aL1Tensor[k * L1Aoffset], param.singleM, kSplitSizeAlign, param.singleM);
+#endif
 #else
         LoadDataToL0A<A, AL>(L0ATensor, aL1Tensor, param, k * L1Aoffset, kSplitSizeAlign, param.singleM);
 #endif
         Buffer<BufferType::L0B> l0bBuffer = bL0BuffsDb.Get();
         LocalTensor<B> L0BTensor = l0bBuffer.GetTensor<B>();
 #if ((__CCE_AICORE__ == 310) || (defined __DAV_310R6__) || (__NPU_ARCH__ == 5102))
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+        // [kw-8a2 回退] B 侧 V2 切换引入 sm3/mask 形态 507015 崩溃（C05），先回退独立循环版
+        // 以隔离崩溃源；A 侧 V2 保留（C04 mere 2.93→0.126 的主要贡献）。
         LoadDataToL0B<B, BL>(
             L0BTensor, bL1Tensor[k * L1Boffset], kSplitSizeAlign, kSplitSizeAlign, param.singleN);
+#else
+        LoadDataToL0B<B, BL>(
+            L0BTensor, bL1Tensor[k * L1Boffset], kSplitSizeAlign, kSplitSizeAlign, param.singleN);
+#endif
 #else
         LoadDataToL0B<B, BL>(L0BTensor, bL1Tensor, param, k * L1Boffset, kSplitSizeAlign, param.singleN);
 #endif

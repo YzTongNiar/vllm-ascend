@@ -1238,7 +1238,11 @@ __aicore__ inline void FiaKernelNonQuantMla<FIAT, CubeBlockType, VecBlockType, F
 
     if (constInfo.batchInvariant) {
         if ASCEND_IS_AIV {
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+            CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_MTE3>(constInfo.syncV2C2);
+#else
             CrossCoreSetFlag<ConstInfo::FIA_SYNC_MODE2, PIPE_MTE3>(constInfo.syncV2C2);
+#endif
         }
     }
     while (shouldDispatchTask || shouldExecuteTask) {
@@ -1271,7 +1275,12 @@ __aicore__ inline void FiaKernelNonQuantMla<FIAT, CubeBlockType, VecBlockType, F
 
     if (constInfo.batchInvariant) {
         if ASCEND_IS_AIC {
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+            CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncV2C2);
+            CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncV2C2 + FIA_CROSS_AIV1_OFFSET);
+#else
             CrossCoreWaitFlag(constInfo.syncV2C2);
+#endif
         }
     }
 }

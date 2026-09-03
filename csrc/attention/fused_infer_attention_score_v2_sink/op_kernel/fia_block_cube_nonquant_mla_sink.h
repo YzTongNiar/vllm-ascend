@@ -532,7 +532,13 @@ template <typename FIAT> __aicore__ inline void FiaBlockCubeNonQuantMla<FIAT>::U
 template <typename FIAT> __aicore__ inline void FiaBlockCubeNonQuantMla<FIAT>::AllocEventID()
 {
     if (!constInfo.batchInvariant) {
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+        // dav-c310（kw-8）：mode-2 广播对对内双 AIV 不可靠，A5 用 intra-block 双置
+        CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncC2V1);
+        CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncC2V1 + FIA_CROSS_AIV1_OFFSET);
+#else
         CrossCoreSetFlag<ConstInfo::FIA_SYNC_MODE2, PIPE_FIX>(constInfo.syncC2V1);
+#endif
     }
 #ifdef BASE_MM
 #else
@@ -614,7 +620,12 @@ template <typename FIAT> __aicore__ inline void FiaBlockCubeNonQuantMla<FIAT>::C
         mSplitInfo.nBufferStartM = i * constInfo.nBufferMBaseSize;
         mSplitInfo.nBufferDealM = (i + 1 != nBufferLoopTimes) ? constInfo.nBufferMBaseSize : nBufferTail;
         ProcessMm1(info, mSplitInfo);
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+        CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncC1V1);
+        CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncC1V1 + FIA_CROSS_AIV1_OFFSET);
+#else
         CrossCoreSetFlag<ConstInfo::FIA_SYNC_MODE2, PIPE_FIX>(constInfo.syncC1V1);
+#endif
     }
 }
 
@@ -630,11 +641,27 @@ template <typename FIAT> __aicore__ inline void FiaBlockCubeNonQuantMla<FIAT>::C
         MSplitInfo mSplitInfo;
         mSplitInfo.nBufferStartM = i * constInfo.nBufferMBaseSize;
         mSplitInfo.nBufferDealM = (i + 1 != nBufferLoopTimes) ? constInfo.nBufferMBaseSize : nBufferTail;
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+        // dav-c310：wait 落消费队列（CopyInMm2AToL1 走 MTE2 读 vec1ResGm），双 AIV 各等一次
+        CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_MTE2>(constInfo.syncV1C2);
+        CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_MTE2>(constInfo.syncV1C2 + FIA_CROSS_AIV1_OFFSET);
+#else
         CrossCoreWaitFlag(constInfo.syncV1C2);
+#endif
         ProcessMm2(info, mSplitInfo);
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+        CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncC2V2);
+        CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncC2V2 + FIA_CROSS_AIV1_OFFSET);
+#else
         CrossCoreSetFlag<ConstInfo::FIA_SYNC_MODE2, PIPE_FIX>(constInfo.syncC2V2);
+#endif
         if (!constInfo.batchInvariant) {
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+            CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncC2V1);
+            CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncC2V1 + FIA_CROSS_AIV1_OFFSET);
+#else
             CrossCoreSetFlag<ConstInfo::FIA_SYNC_MODE2, PIPE_FIX>(constInfo.syncC2V1);
+#endif
         }
     }
 }
@@ -1013,7 +1040,12 @@ __aicore__ inline void FiaBlockCubeNonQuantMla<FIAT>::ProcessMm2(const AiInfraIn
     LocalTensor<KV_T> subvTensor; // subvTensor需要跨m复用, 需要定义在外面?
 
     if (constInfo.batchInvariant) {
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+        CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncV2C2);
+        CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncV2C2 + FIA_CROSS_AIV1_OFFSET);
+#else
         CrossCoreWaitFlag(constInfo.syncV2C2);
+#endif
     }
 #ifdef BASE_MM
     AiInfraInferenceCommonFaBaseMatmul::Buffer<AiInfraInferenceCommonFaBaseMatmul::BufferType::L1> mm2A;
@@ -1182,7 +1214,13 @@ __aicore__ inline void FiaBlockCubeNonQuantMla<FIAT>::ProcessMm2(const AiInfraIn
                 if (k1 == (kL1Loops - 1)) {
                     if (!constInfo.batchInvariant) {
                         if (nL1 == 0 && mL1 == 0) { // 第一次Fixpipe前等待
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+                            CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncV1NupdateC2);
+                            CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(
+                                constInfo.syncV1NupdateC2 + FIA_CROSS_AIV1_OFFSET);
+#else
                             CrossCoreWaitFlag(constInfo.syncV1NupdateC2);
+#endif
                         }
 
                         if (!info.isFirstSInnerLoop) {

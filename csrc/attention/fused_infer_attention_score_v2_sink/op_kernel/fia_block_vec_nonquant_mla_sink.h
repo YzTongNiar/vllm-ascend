@@ -483,7 +483,11 @@ template <typename FIAT> __aicore__ inline void FiaBlockVecNonQuantMla<FIAT>::Al
 template <typename FIAT> __aicore__ inline void FiaBlockVecNonQuantMla<FIAT>::FreeEventID()
 {
     if (!constInfo.batchInvariant) {
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+        CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_MTE3>(constInfo.syncC2V1);
+#else
         CrossCoreWaitFlag(constInfo.syncC2V1);
+#endif
     }
     WaitFlag<AscendC::HardEvent::V_MTE2>(SYNC_INPUT_BUF1_FLAG);
     WaitFlag<AscendC::HardEvent::V_MTE2>(SYNC_INPUT_BUF1_PONG_FLAG);
@@ -1056,17 +1060,34 @@ __aicore__ inline void FiaBlockVecNonQuantMla<FIAT>::ProcessVec1L(const AiInfraI
             mSplitInfo.vecDealM = mSplitInfo.nBufferDealM - mSplitInfo.vecDealM;
         }
 
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+        // dav-c310：wait 落消费队列（读 mm1ResGm 走 MTE2）
+        CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_MTE2>(constInfo.syncC1V1);
+#else
         CrossCoreWaitFlag(constInfo.syncC1V1);
+#endif
         // vec1 compute
         ProcessVec1SingleBuf(info, mSplitInfo);
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+        CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_MTE3>(constInfo.syncV1C2);
+#else
         CrossCoreSetFlag<AiInfraInferenceAttentionCommon::ConstInfo::FIA_SYNC_MODE2, PIPE_MTE3>(constInfo.syncV1C2);
+#endif
 
         if (!constInfo.batchInvariant) {
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+            CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_MTE2>(constInfo.syncC2V1);
+#else
             CrossCoreWaitFlag(constInfo.syncC2V1);
+#endif
             // add nUpdate to mm2ResGm
             ProcessAmlaNupdate(info, mSplitInfo);
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+            CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_MTE3>(constInfo.syncV1NupdateC2);
+#else
             CrossCoreSetFlag<AiInfraInferenceAttentionCommon::ConstInfo::FIA_SYNC_MODE2, PIPE_MTE3>(
                 constInfo.syncV1NupdateC2);
+#endif
         }
 
         // move lse for flash decode
@@ -1210,11 +1231,19 @@ __aicore__ inline void FiaBlockVecNonQuantMla<FIAT>::ProcessVec2L(const AiInfraI
             mSplitInfo.vecStartM = mSplitInfo.vecDealM;
             mSplitInfo.vecDealM = mSplitInfo.nBufferDealM - mSplitInfo.vecDealM;
         }
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+        CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_MTE2>(constInfo.syncC2V2);
+#else
         CrossCoreWaitFlag(constInfo.syncC2V2);
+#endif
         ProcessVec2SingleBuf(info, mSplitInfo);
     }
     if (constInfo.batchInvariant) {
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+        CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_MTE3>(constInfo.syncV2C2);
+#else
         CrossCoreSetFlag<ConstInfo::FIA_SYNC_MODE2, PIPE_MTE3>(constInfo.syncV2C2);
+#endif
     }
 }
 
