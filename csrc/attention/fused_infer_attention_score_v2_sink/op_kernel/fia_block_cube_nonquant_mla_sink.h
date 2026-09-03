@@ -1020,19 +1020,6 @@ __aicore__ inline void FiaBlockCubeNonQuantMla<FIAT>::ProcessMm2(const AiInfraIn
 {
     uint32_t mSize = mSplitInfo.nBufferDealM;
     uint32_t mSizeAlign = (mSize + 16 - 1) / 16;
-#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
-    // dav-c310 (kw-10b2)：mm2 的 P 链（staging Nd2Nz dstNzC0stride、L1->L0A V2 mStep、
-    // L0C/fixpipe mSize 均由 m 推导）在 m < 128 时存在小 M 几何缺陷（host 边界实验：
-    // m=16/32/40/48/64 脏且误差按 D 维 n-chunk 单调递增，m=128 干净）；垫到 64 无效
-    //（kw-10b 实测）。修法：mm2 链的处理 m 统一垫到 M_L1_SPLIT_SIZE=128 —— 与
-    // mBaseSize 整任务（C05/C08 等已收敛形态）完全相同的规范几何。垫出行 [m,128) 读
-    // P staging slot 过期区（slot 容量 256 行，无越界），乘积落累计器 slot 的 [m,128)
-    // 行 —— V2 只读 [0,actMBaseSize) 行，永不读出，数学无害。mm1 链（lse 干净）与
-    // V1/AIV 侧不动；A3 路径零变化。
-    if (mSize < M_L1_SPLIT_SIZE) {
-        mSize = M_L1_SPLIT_SIZE;
-    }
-#endif
     uint32_t mL1Loops = (mSize + M_L1_SPLIT_SIZE - 1) / M_L1_SPLIT_SIZE;
     uint32_t mL1SizeAlign = M_L1_SPLIT_SIZE; // 16对齐
     uint32_t mL1Size = M_L1_SPLIT_SIZE; // m的实际大小
