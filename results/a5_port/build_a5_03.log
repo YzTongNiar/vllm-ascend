@@ -1,0 +1,216 @@
+/usr/local/python3.11.10/lib/python3.11/site-packages/setuptools/dist.py:765: SetuptoolsDeprecationWarning: License classifiers are deprecated.
+!!
+
+        ********************************************************************************
+        Please consider removing the following classifiers in favor of a SPDX license expression:
+
+        License :: OSI Approved :: Apache Software License
+
+        See https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#license for details.
+        ********************************************************************************
+
+!!
+  self._finalize_license_expression()
+running build_ext
+running build_aclnn
+[build_aclnn] start: ROOT_DIR=/home/t00886357/fia_sink_a5_port_base/vllm-ascend SOC_VERSION=ascend950pr_9599 cwd=/home/t00886357/fia_sink_a5_port_base/vllm-ascend
+[build_aclnn] env: ASCEND_HOME_PATH=/usr/local/Ascend/cann-9.1.0 ASCEND_TOOLKIT_HOME=/usr/local/Ascend/cann-9.1.0
+[build_aclnn] matched SOC branch: ascend950
+[build_aclnn] catlass include=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/third_party/catlass/include
+[build_aclnn] resolved SOC_ARG=ascend950
+[build_aclnn] resolved CUSTOM_OPS=moe_gating_top_k_hash;inplace_partial_rotary_mul;kv_compress_epilog;compressor;compressor_metadata;vllm_quant_lightning_indexer;vllm_quant_lightning_indexer_metadata;kv_quant_sparse_attn_sharedkv;kv_quant_sparse_attn_sharedkv_metadata;hc_post;hc_pre;swiglu_group_quant;situ_mx_quant;indexer_compress_epilog_v2;causal_conv1d;recurrent_gated_delta_rule;recurrent_kda;chunk_fwd_o;chunk_gated_delta_rule_fwd_h;chunk_kda_fwd;kda_gate_cumsum;kda_layout_swap12;store_kv_block;store_kv_block_metadata;k2q_csr;sparse_attention_score;fused_infer_attention_score_v2_sink;fused_infer_attention_score_v2_sink_metadata
+[build_aclnn] custom op count=28
+[build_aclnn] op moe_gating_top_k_hash: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/moe/moe_gating_top_k_hash cmake=yes op_host_cmake=yes op_kernel_cpp_count=1
+[build_aclnn] op inplace_partial_rotary_mul: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/attention/inplace_partial_rotary_mul cmake=yes op_host_cmake=yes op_kernel_cpp_count=1
+[build_aclnn] op kv_compress_epilog: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/attention/kv_compress_epilog cmake=yes op_host_cmake=yes op_kernel_cpp_count=1
+[build_aclnn] op compressor: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/attention/compressor cmake=yes op_host_cmake=yes op_kernel_cpp_count=1
+[build_aclnn] op compressor_metadata: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/attention/compressor_metadata cmake=yes op_host_cmake=yes op_kernel_cpp_count=1
+[build_aclnn] op vllm_quant_lightning_indexer: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/attention/vllm_quant_lightning_indexer cmake=yes op_host_cmake=yes op_kernel_cpp_count=1
+[build_aclnn] op vllm_quant_lightning_indexer_metadata: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/attention/vllm_quant_lightning_indexer_metadata cmake=yes op_host_cmake=no op_kernel_cpp_count=0
+[build_aclnn] op kv_quant_sparse_attn_sharedkv: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/attention/kv_quant_sparse_attn_sharedkv cmake=yes op_host_cmake=yes op_kernel_cpp_count=1
+[build_aclnn] op kv_quant_sparse_attn_sharedkv_metadata: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/attention/kv_quant_sparse_attn_sharedkv_metadata cmake=yes op_host_cmake=yes op_kernel_cpp_count=0
+[build_aclnn] op hc_post: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/moe/hc_post cmake=yes op_host_cmake=yes op_kernel_cpp_count=1
+[build_aclnn] op hc_pre: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/moe/hc_pre cmake=yes op_host_cmake=yes op_kernel_cpp_count=1
+[build_aclnn] op swiglu_group_quant: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/moe/swiglu_group_quant cmake=yes op_host_cmake=yes op_kernel_cpp_count=1
+[build_aclnn] op situ_mx_quant: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/moe/situ_mx_quant cmake=yes op_host_cmake=yes op_kernel_cpp_count=1
+[build_aclnn] op indexer_compress_epilog_v2: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/attention/indexer_compress_epilog_v2 cmake=yes op_host_cmake=yes op_kernel_cpp_count=1
+[build_aclnn] op causal_conv1d: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/moe/causal_conv1d cmake=yes op_host_cmake=yes op_kernel_cpp_count=1
+[build_aclnn] op recurrent_gated_delta_rule: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/attention/recurrent_gated_delta_rule cmake=yes op_host_cmake=yes op_kernel_cpp_count=1
+[build_aclnn] op recurrent_kda: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/attention/recurrent_kda cmake=yes op_host_cmake=yes op_kernel_cpp_count=1
+[build_aclnn] op chunk_fwd_o: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/moe/chunk_fwd_o cmake=yes op_host_cmake=yes op_kernel_cpp_count=1
+[build_aclnn] op chunk_gated_delta_rule_fwd_h: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/moe/chunk_gated_delta_rule_fwd_h cmake=yes op_host_cmake=yes op_kernel_cpp_count=1
+[build_aclnn] op chunk_kda_fwd: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/attention/chunk_kda_fwd cmake=yes op_host_cmake=yes op_kernel_cpp_count=1
+[build_aclnn] op kda_gate_cumsum: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/attention/kda_gate_cumsum cmake=yes op_host_cmake=yes op_kernel_cpp_count=1
+[build_aclnn] op kda_layout_swap12: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/attention/kda_layout_swap12 cmake=yes op_host_cmake=yes op_kernel_cpp_count=1
+[build_aclnn] op store_kv_block: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/attention/store_kv_block cmake=yes op_host_cmake=yes op_kernel_cpp_count=1
+[build_aclnn] op store_kv_block_metadata: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/attention/store_kv_block_metadata cmake=yes op_host_cmake=no op_kernel_cpp_count=0
+[build_aclnn] op k2q_csr: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/attention/k2q_csr cmake=yes op_host_cmake=no op_kernel_cpp_count=0
+[build_aclnn] op sparse_attention_score: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/attention/sparse_attention_score cmake=yes op_host_cmake=yes op_kernel_cpp_count=2
+[build_aclnn] op fused_infer_attention_score_v2_sink: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/attention/fused_infer_attention_score_v2_sink cmake=yes op_host_cmake=no op_kernel_cpp_count=1
+[build_aclnn] op fused_infer_attention_score_v2_sink_metadata: dir=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/attention/fused_infer_attention_score_v2_sink_metadata cmake=yes op_host_cmake=no op_kernel_cpp_count=0
+[build_aclnn] subshell cwd before cd=/home/t00886357/fia_sink_a5_port_base/vllm-ascend
+[build_aclnn] subshell cwd after cd=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc
+[build_aclnn] preserving csrc/build and cleaning output dirs
+[build_aclnn] build command: bash build.sh --pkg --ops="moe_gating_top_k_hash;inplace_partial_rotary_mul;kv_compress_epilog;compressor;compressor_metadata;vllm_quant_lightning_indexer;vllm_quant_lightning_indexer_metadata;kv_quant_sparse_attn_sharedkv;kv_quant_sparse_attn_sharedkv_metadata;hc_post;hc_pre;swiglu_group_quant;situ_mx_quant;indexer_compress_epilog_v2;causal_conv1d;recurrent_gated_delta_rule;recurrent_kda;chunk_fwd_o;chunk_gated_delta_rule_fwd_h;chunk_kda_fwd;kda_gate_cumsum;kda_layout_swap12;store_kv_block;store_kv_block_metadata;k2q_csr;sparse_attention_score;fused_infer_attention_score_v2_sink;fused_infer_attention_score_v2_sink_metadata" --soc="ascend950"
+[build_aclnn] building custom ops moe_gating_top_k_hash;inplace_partial_rotary_mul;kv_compress_epilog;compressor;compressor_metadata;vllm_quant_lightning_indexer;vllm_quant_lightning_indexer_metadata;kv_quant_sparse_attn_sharedkv;kv_quant_sparse_attn_sharedkv_metadata;hc_post;hc_pre;swiglu_group_quant;situ_mx_quant;indexer_compress_epilog_v2;causal_conv1d;recurrent_gated_delta_rule;recurrent_kda;chunk_fwd_o;chunk_gated_delta_rule_fwd_h;chunk_kda_fwd;kda_gate_cumsum;kda_layout_swap12;store_kv_block;store_kv_block_metadata;k2q_csr;sparse_attention_score;fused_infer_attention_score_v2_sink;fused_infer_attention_score_v2_sink_metadata for ascend950pr_9599
+json found in /home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/third_party/json, and not force rebuild cann third_party
+CMake Warning (author) at /usr/local/python3.11.10/lib/python3.11/site-packages/cmake/data/share/cmake-4.4/Modules/ExternalProject/shared_internal_commands.cmake:1277 (message):
+  The DOWNLOAD_EXTRACT_TIMESTAMP option was not given and policy CMP0135 is
+  not set.  The policy's OLD behavior will be used.  When using a URL
+  download, the timestamps of extracted files should preferably be that of
+  the time of extraction, otherwise code that depends on the extracted
+  contents might not be rebuilt if the URL changes.  The OLD behavior
+  preserves the timestamps from the archive instead, but this is usually not
+  what you want.  Update your project to the NEW behavior or specify the
+  DOWNLOAD_EXTRACT_TIMESTAMP option with a value of true to avoid this
+  robustness issue.
+Call Stack (most recent call first):
+  /usr/local/python3.11.10/lib/python3.11/site-packages/cmake/data/share/cmake-4.4/Modules/ExternalProject.cmake:3283 (_ep_add_download_command)
+  cmake/third_party/ascend_protobuf.cmake:47 (ExternalProject_Add)
+  CMakeLists.txt:136 (include)
+This warning is for project developers.  Use -Wno-author to suppress it.
+
+json found in /home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/third_party/json, and not force rebuild cann third_party
+CMake Warning (author) at /usr/local/python3.11.10/lib/python3.11/site-packages/cmake/data/share/cmake-4.4/Modules/ExternalProject/shared_internal_commands.cmake:1277 (message):
+  The DOWNLOAD_EXTRACT_TIMESTAMP option was not given and policy CMP0135 is
+  not set.  The policy's OLD behavior will be used.  When using a URL
+  download, the timestamps of extracted files should preferably be that of
+  the time of extraction, otherwise code that depends on the extracted
+  contents might not be rebuilt if the URL changes.  The OLD behavior
+  preserves the timestamps from the archive instead, but this is usually not
+  what you want.  Update your project to the NEW behavior or specify the
+  DOWNLOAD_EXTRACT_TIMESTAMP option with a value of true to avoid this
+  robustness issue.
+Call Stack (most recent call first):
+  /usr/local/python3.11.10/lib/python3.11/site-packages/cmake/data/share/cmake-4.4/Modules/ExternalProject.cmake:3283 (_ep_add_download_command)
+  cmake/third_party/ascend_protobuf.cmake:47 (ExternalProject_Add)
+  CMakeLists.txt:136 (include)
+This warning is for project developers.  Use -Wno-author to suppress it.
+
+CMake Error at cmake/symbol.cmake:253 (add_custom_command):
+  Error evaluating generator expression:
+
+    $<TARGET_OBJECTS:flash_mla_with_kvcache_metadata_obj>
+
+  Objects of target "flash_mla_with_kvcache_metadata_obj" referenced but no
+  such target exists.
+Call Stack (most recent call first):
+  CMakeLists.txt:152 (gen_cust_aicpu_kernel_symbol)
+
+
+CMake Error at cmake/symbol.cmake:253 (add_custom_command):
+  Error evaluating generator expression:
+
+    $<TARGET_OBJECTS:flash_mla_with_kvcache_metadata_obj>
+
+  Objects of target "flash_mla_with_kvcache_metadata_obj" referenced but no
+  such target exists.
+Call Stack (most recent call first):
+  CMakeLists.txt:152 (gen_cust_aicpu_kernel_symbol)
+
+
+CMake Error at cmake/symbol.cmake:253 (add_custom_command):
+  Error evaluating generator expression:
+
+    $<TARGET_OBJECTS:flash_mla_with_kvcache_metadata_obj>
+
+  Objects of target "flash_mla_with_kvcache_metadata_obj" referenced but no
+  such target exists.
+Call Stack (most recent call first):
+  CMakeLists.txt:152 (gen_cust_aicpu_kernel_symbol)
+
+
+CMake Generate step failed.  Build files cannot be regenerated correctly.
+[2026-09-02 05:50:07] [2026-09-02 05:50:04] Info: use CMake generator Ninja
+[2026-09-02 05:50:07] [2026-09-02 05:50:04] Info: cmake config generator=-G Ninja -DBUILD_OPEN_PROJECT=ON -DASCEND_OP_NAME=moe_gating_top_k_hash;inplace_partial_rotary_mul;kv_compress_epilog;compressor;compressor_metadata;vllm_quant_lightning_indexer;vllm_quant_lightning_indexer_metadata;kv_quant_sparse_attn_sharedkv;kv_quant_sparse_attn_sharedkv_metadata;hc_post;hc_pre;swiglu_group_quant;situ_mx_quant;indexer_compress_epilog_v2;causal_conv1d;recurrent_gated_delta_rule;recurrent_kda;chunk_fwd_o;chunk_gated_delta_rule_fwd_h;chunk_kda_fwd;kda_gate_cumsum;kda_layout_swap12;store_kv_block;store_kv_block_metadata;k2q_csr;sparse_attention_score;fused_infer_attention_score_v2_sink;fused_infer_attention_score_v2_sink_metadata -DCANN_3RD_LIB_PATH=/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/third_party -DCUSTOM_ASCEND_CANN_PACKAGE_PATH=/usr/local/Ascend/cann-9.1.0 -DCHECK_COMPATIBLE=true -DASCEND_COMPUTE_UNIT=ascend950; -DENABLE_BUILT_IN=OFF -DENABLE_OPS_HOST=ON -DENABLE_OPS_KERNEL=ON -DENABLE_BUILD_PKG=ON .
+[2026-09-02 05:50:07] -- build with 3~8 packages........
+[2026-09-02 05:50:07] -- compile project with library
+[2026-09-02 05:50:07] -- ASCEND_CANN_PACKAGE_PATH=/usr/local/Ascend/cann-9.1.0
+[2026-09-02 05:50:07] -- ENABLE_CCACHE=ON, CUSTOM_CCACHE=
+[2026-09-02 05:50:07] -- CCACHE_PROGRAM=CCACHE_PROGRAM-NOTFOUND
+[2026-09-02 05:50:07] -- ASCEND_COMPUTE_UNIT=ascend950;
+[2026-09-02 05:50:07] -- ASCEND_OP_NAME=moe_gating_top_k_hash;inplace_partial_rotary_mul;kv_compress_epilog;compressor;compressor_metadata;vllm_quant_lightning_indexer;vllm_quant_lightning_indexer_metadata;kv_quant_sparse_attn_sharedkv;kv_quant_sparse_attn_sharedkv_metadata;hc_post;hc_pre;swiglu_group_quant;situ_mx_quant;indexer_compress_epilog_v2;causal_conv1d;recurrent_gated_delta_rule;recurrent_kda;chunk_fwd_o;chunk_gated_delta_rule_fwd_h;chunk_kda_fwd;kda_gate_cumsum;kda_layout_swap12;store_kv_block;store_kv_block_metadata;k2q_csr;sparse_attention_score;fused_infer_attention_score_v2_sink;fused_infer_attention_score_v2_sink_metadata
+[2026-09-02 05:50:07] -- TILING_KEY=
+[2026-09-02 05:50:07] -- TESTS_UT_OPS_TEST=
+[2026-09-02 05:50:07] -- TESTS_EXAMPLE_OPS_TEST=
+[2026-09-02 05:50:07] -- CMAKE_BUILD_TYPE=Release
+[2026-09-02 05:50:07] -- VERSION=
+[2026-09-02 05:50:07] -- Start building custom package.
+[2026-09-02 05:50:07] -- Search libs under install path /usr/local/Ascend/cann-9.1.0
+[2026-09-02 05:50:07] -- CMAKE_MODULE_PATH            :/home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/cmake/modules
+[2026-09-02 05:50:07] -- compile option:   -Wall -Wextra -Wshadow -Wformat=2 -fno-common -fPIC -Wformat-signedness -Wno-missing-include-dirs -Wno-write-strings
+[2026-09-02 05:50:07] -- Transformer Variables in dlog module:
+[2026-09-02 05:50:07] -- dlog_TRANSFORMER_INCLUDE_DIR="/usr/local/Ascend/cann-9.1.0/pkg_inc/base"
+[2026-09-02 05:50:07] -- dlog_SHARED_LIBRARY="/usr/local/Ascend/cann-9.1.0/lib64/libascendalog.so"
+[2026-09-02 05:50:07] -- 
+[2026-09-02 05:50:07]  Properties for TARGET dlog:
+[2026-09-02 05:50:07]    dlog.INTERFACE_COMPILE_DEFINITIONS = "LOG_CPP;PROCESS_LOG"
+[2026-09-02 05:50:07]    dlog.INTERFACE_LINK_LIBRARIES = "dlog_headers"
+[2026-09-02 05:50:07]    dlog.IMPORTED_LOCATION = "/usr/local/Ascend/cann-9.1.0/lib64/libascendalog.so"
+[2026-09-02 05:50:07] 
+[2026-09-02 05:50:07] -- 
+[2026-09-02 05:50:07]  Properties for TARGET dlog_headers:
+[2026-09-02 05:50:07]    dlog_headers.INTERFACE_INCLUDE_DIRECTORIES = "/usr/local/Ascend/cann-9.1.0/pkg_inc/base"
+[2026-09-02 05:50:07] 
+[2026-09-02 05:50:07] -- Found OPABSE include:/usr/local/Ascend/cann-9.1.0/x86_64-linux/include
+[2026-09-02 05:50:07] -- Found OPABSE lib:/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/libops_base.so
+[2026-09-02 05:50:07] -- Found platform include:/usr/local/Ascend/cann-9.1.0/x86_64-linux/include
+[2026-09-02 05:50:07] -- Found register library:/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/libregister.so
+[2026-09-02 05:50:07] -- Found opp_registry library:/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/libopp_registry.so
+[2026-09-02 05:50:07] -- Found exe_graph library:/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/libexe_graph.so
+[2026-09-02 05:50:07] -- Found graph_base library:/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/libgraph_base.so
+[2026-09-02 05:50:07] -- Found error_manager library:/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/liberror_manager.so
+[2026-09-02 05:50:07] -- Found metadef library:/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/libmetadef.so
+[2026-09-02 05:50:07] -- Found rt2_registry library:/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/librt2_registry.a
+[2026-09-02 05:50:07] -- Found source metadef include dir:  /usr/local/Ascend/cann-9.1.0/x86_64-linux/include/;/usr/local/Ascend/cann-9.1.0/x86_64-linux/include/exe_graph
+[2026-09-02 05:50:07] -- Found graph library:/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/libgraph.so
+[2026-09-02 05:50:07] -- Found source acl include dir:  /usr/local/Ascend/cann-9.1.0/x86_64-linux/include
+[2026-09-02 05:50:07] -- Found source npuruntime include dir: /usr/local/Ascend/cann-9.1.0/x86_64-linux/pkg_inc/runtime
+[2026-09-02 05:50:07] -- Found aclnn include dir:  /usr/local/Ascend/cann-9.1.0/x86_64-linux/include
+[2026-09-02 05:50:07] -- Found opdev include dir:  /usr/local/Ascend/cann-9.1.0/x86_64-linux/include/aclnn
+[2026-09-02 05:50:07] -- Found tilingapi include:/usr/local/Ascend/cann-9.1.0/x86_64-linux/include
+[2026-09-02 05:50:07] -- TILINGAPI_INC_DIRS: /usr/local/Ascend/cann-9.1.0/x86_64-linux/include;/usr/local/Ascend/cann-9.1.0/x86_64-linux/ascendc;/usr/local/Ascend/cann-9.1.0/x86_64-linux/ascendc/include;/usr/local/Ascend/cann-9.1.0/x86_64-linux/ascendc/include/highlevel_api;/usr/local/Ascend/cann-9.1.0/x86_64-linux/ascendc/include/highlevel_api/lib;/usr/local/Ascend/cann-9.1.0/x86_64-linux/ascendc/include/highlevel_api/impl;/usr/local/Ascend/cann-9.1.0/x86_64-linux/ascendc/include/highlevel_api/tiling
+[2026-09-02 05:50:07] -- Found tilingapi lib:/usr/local/Ascend/cann-9.1.0/x86_64-linux/lib64/libtiling_api.a
+[2026-09-02 05:50:07] -- Using AICPU include dirs: /usr/local/Ascend/cann-9.1.0/x86_64-linux/include/aicpu;/usr/local/Ascend/cann-9.1.0/x86_64-linux/include/experiment;/usr/local/Ascend/cann-9.1.0/x86_64-linux/include/experiment/cce;/usr/local/Ascend/cann-9.1.0/x86_64-linux/include/experiment/msprof;/usr/local/Ascend/cann-9.1.0/x86_64-linux/pkg_inc;/usr/local/Ascend/cann-9.1.0/x86_64-linux/pkg_inc/aicpu;/usr/local/Ascend/cann-9.1.0/x86_64-linux/pkg_inc/aicpu_common/context;/usr/local/Ascend/cann-9.1.0/x86_64-linux/pkg_inc/aicpu_common/context/common;/usr/local/Ascend/cann-9.1.0/x86_64-linux/pkg_inc/aicpu_common/context/cpu_proto;/usr/local/Ascend/cann-9.1.0/x86_64-linux/pkg_inc/aicpu_common/context/utils;/usr/local/Ascend/cann-9.1.0/x86_64-linux/include/aicpu_common/context;/usr/local/Ascend/cann-9.1.0/x86_64-linux/include/aicpu_common/context/common;/usr/local/Ascend/cann-9.1.0/x86_64-linux/include/aicpu_common/context/cpu_proto;/usr/local/Ascend/cann-9.1.0/x86_64-linux/include/experiment/datagw/aicpu/common;/usr/local/Ascend/cann-9.1.0/x86_64-linux/include/aicpu_common/context/utils
+[2026-09-02 05:50:07] -- Found abseil-cpp in /home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/third_party/abseil-cpp
+[2026-09-02 05:50:07] -- Could NOT find ascend_protobuf_build_transformer (missing: ASCEND_PROTOBUF_SHARED_INCLUDE) 
+[2026-09-02 05:50:07] -- [ThirdPartyLib][ascend protobuf] ascend protobuf shared not found, finding binary file.
+[2026-09-02 05:50:07] -- [ThirdPartyLib][ascend protobuf] found in file:///home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/third_party/pkg/protobuf-25.1.tar.gz.
+[2026-09-02 05:50:07] -- Variables in alog module:
+[2026-09-02 05:50:07] -- alog_a_INCLUDE_DIR="/usr/local/Ascend/cann-9.1.0/include"
+[2026-09-02 05:50:07] -- slog_a_SHARED_LIBRARY="/usr/local/Ascend/cann-9.1.0/lib64/libascendalog.so"
+[2026-09-02 05:50:07] -- alog_a_SHARED_LIBRARY="/usr/local/Ascend/cann-9.1.0/lib64/libascendalog.so"
+[2026-09-02 05:50:07] -- 
+[2026-09-02 05:50:07]  Properties for TARGET slog_a:
+[2026-09-02 05:50:07]    slog_a.INTERFACE_COMPILE_DEFINITIONS = "LOG_CPP;PROCESS_LOG"
+[2026-09-02 05:50:07]    slog_a.INTERFACE_LINK_LIBRARIES = "alog_headers"
+[2026-09-02 05:50:07]    slog_a.IMPORTED_LOCATION = "/usr/local/Ascend/cann-9.1.0/lib64/libascendalog.so"
+[2026-09-02 05:50:07] 
+[2026-09-02 05:50:07] -- 
+[2026-09-02 05:50:07]  Properties for TARGET alog_a:
+[2026-09-02 05:50:07]    alog_a.INTERFACE_COMPILE_DEFINITIONS = "LOG_CPP;PROCESS_LOG"
+[2026-09-02 05:50:07]    alog_a.INTERFACE_LINK_LIBRARIES = "alog_headers"
+[2026-09-02 05:50:07]    alog_a.IMPORTED_LOCATION = "/usr/local/Ascend/cann-9.1.0/lib64/libascendalog.so"
+[2026-09-02 05:50:07] 
+[2026-09-02 05:50:07] -- 
+[2026-09-02 05:50:07]  Properties for TARGET alog_headers:
+[2026-09-02 05:50:07]    alog_headers.INTERFACE_INCLUDE_DIRECTORIES = "/usr/local/Ascend/cann-9.1.0/include;/usr/local/Ascend/cann-9.1.0/include/base"
+[2026-09-02 05:50:07] 
+[2026-09-02 05:50:07] -- Could NOT find unified_dlog (missing: _INCLUDE_ROOT_DIR) 
+[2026-09-02 05:50:07] -- === Debug: BUILD is BUILD_OPEN_PROJECT
+[2026-09-02 05:50:07] -- === Debug: BUILD is NOT BUILD_OPS_RTY_KERNEL
+[2026-09-02 05:50:07] -- === Debug: BUILD is BUILD_OPEN_PROJECT
+[2026-09-02 05:50:07] -- === Debug: BUILD is NOT BUILD_OPS_RTY_KERNEL
+[2026-09-02 05:50:07] -- k2q_csr: vendored k2q_csr_common/op_kernel -> */op_kernel/common
+[2026-09-02 05:50:07] -- [kv_quant_sparse_attn_sharedkv_metadata] Found aicpu sources: /home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/attention/kv_quant_sparse_attn_sharedkv_metadata/op_kernel_aicpu/kv_quant_sparse_attn_sharedkv_metadata_aicpu.cpp, ascend dir: /usr/local/Ascend/cann-9.1.0, ophost name: ophost_transformer
+[2026-09-02 05:50:07] -- Detected architecture: x86_64
+[2026-09-02 05:50:07] -- End building custom package.
+[2026-09-02 05:50:07] -- create aclnn master header file: /home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/build/aclnn_ops_transformer_custom.h
+[2026-09-02 05:50:07] -- no operator info to generate
+[2026-09-02 05:50:07] -- Linking cust_aicpu_kernels with ARM toolchain: /usr/local/Ascend/cann-9.1.0/toolkit/toolchain/hcc/bin/aarch64-target-linux-gnu-g++
+[2026-09-02 05:50:07] -- Objects: $<TARGET_OBJECTS:flash_mla_with_kvcache_metadata_obj>;$<TARGET_OBJECTS:kv_quant_sparse_attn_sharedkv_metadata_obj>;$<TARGET_OBJECTS:store_kv_block_metadata_obj>;$<TARGET_OBJECTS:vllm_quant_lightning_indexer_metadata_obj>;$<TARGET_OBJECTS:fused_infer_attention_score_v2_sink_metadata_obj>
+[2026-09-02 05:50:07] -- Output: /home/t00886357/fia_sink_a5_port_base/vllm-ascend/csrc/build/libtransformer_aicpu_kernels.so
+[2026-09-02 05:50:07] -- Configuring done (3.1s)
+[2026-09-02 05:50:07] -- Generating done (0.1s)
+Running bash build_aclnn.sh ...
+Error running build_aclnn.sh: Command '['bash', 'csrc/build_aclnn.sh', '/home/t00886357/fia_sink_a5_port_base/vllm-ascend', 'ascend950pr_9599']' returned non-zero exit status 1.

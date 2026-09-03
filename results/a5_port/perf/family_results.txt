@@ -1,0 +1,22 @@
+RESULT:{"case": "C04_sig_b_min", "acc": {"bit": false, "mere": NaN, "max_abs": NaN}, "sink_ms": 0.38396602030843496, "official_ms": 0.13846802175976336, "ratio": 2.772958083958194}
+RESULT:{"case":"C05_batch4","error":"crash/timeout"}
+RESULT:{"case":"C06_batch16","error":"crash/timeout"}
+RESULT:{"case": "C07_ctx8k", "acc": {"bit": false, "mere": 1.682539701461792, "max_abs": 1.65625}, "sink_ms": 0.33525298931635916, "official_ms": 0.8309980039484799, "ratio": 0.40343416918380964}
+RESULT:{"case": "C08_ctx12k", "acc": {"bit": false, "mere": 1.578125, "max_abs": 1.578125}, "sink_ms": 0.5921590200159699, "official_ms": 7.9739180218894035, "ratio": 0.07426198995154192}
+RESULT:{"case": "C10_decode_min_g2", "acc": {"bit": false, "mere": 1.1788617372512817, "max_abs": 1.15625}, "sink_ms": 0.24288397980853915, "official_ms": 0.32461699447594583, "ratio": 0.7482170802568283}
+RESULT:{"case": "C11_gate_longseq", "acc": {"bit": false, "mere": 1.234375, "max_abs": 1.234375}, "sink_ms": 0.9287540160585195, "official_ms": 5.67703100387007, "ratio": 0.16359854568794527}
+RESULT:{"case": "C12_r12_kv128k", "acc": {"bit": false, "mere": 9.232558250427246, "max_abs": 9.359375}, "sink_ms": 0.4601010004989803, "official_ms": 2.0389600249473006, "ratio": 0.22565474304032623}
+RESULT:{"case": "C13_r12_kv256k", "acc": {"bit": false, "mere": 14.375, "max_abs": 14.375}, "sink_ms": 0.7032759895082563, "official_ms": 4.112392023671418, "ratio": 0.17101384922938181}
+RESULT:{"case": "C14_r12_kv512k", "acc": {"bit": false, "mere": 62.25581359863281, "max_abs": 62.9609375}, "sink_ms": 1.2022139853797853, "official_ms": 8.009470999240875, "ratio": 0.150099049674283}
+RESULT:{"case": "C15_r24_kv128k", "acc": {"bit": false, "mere": 35.18461608886719, "max_abs": 35.734375}, "sink_ms": 0.8128600020427257, "official_ms": 2.0570979977492243, "ratio": 0.3951488956443092}
+RESULT:{"case": "C16_r24_kv256k", "acc": {"bit": false, "mere": 27.184616088867188, "max_abs": 27.609375}, "sink_ms": 8.986507018562406, "official_ms": 3.9899989787954837, "ratio": 2.2522579745810583}
+RESULT:{"case": "C17_r24_kv512k", "acc": {"bit": false, "mere": 75.0, "max_abs": 75.96875}, "sink_ms": 1.4992700016591698, "official_ms": 7.8249340003822, "ratio": 0.1916016162674266}
+RESULT:{"case": "C18_r96_kv128k", "acc": {"bit": false, "mere": 0.8046875, "max_abs": 0.8046875}, "sink_ms": 12.001482013147324, "official_ms": 7.962169998791069, "ratio": 1.507312958021439}
+RESULT:{"case": "C19_r96_kv256k", "acc": {"bit": false, "mere": 0.8671875, "max_abs": 0.8671875}, "sink_ms": 2.592631004517898, "official_ms": 4.052662989124656, "ratio": 0.6397351596901193}
+RESULT:{"case": "C20_r96_kv512k", "acc": {"bit": false, "mere": 0.8828125, "max_abs": 0.8828125}, "sink_ms": 4.773544002091512, "official_ms": 8.122040017042309, "ratio": 0.5877272202642788}
+RESULT:{"case":"GQA_C21","error":"crash/timeout"}
+RESULT:{"case":"GQA_C22","error":"crash/timeout"}
+RESULT:{"case":"GQA_C23","error":"crash/timeout"}
+RESULT:{"case":"GQA_C24","error":"crash/timeout"}
+RESULT:{"case":"GQA_C25","error":"crash/timeout"}
+RESULT:{"case":"GQA_C26","error":"crash/timeout"}
