@@ -653,6 +653,42 @@ mask，值无意义仅需防越界。修复后 C05 累计 5 跑全过。
 - 42cdc495a revert kw-10b/b2
 - cb79e16d9 安全钳位（bt 越界修复）—— 最终交付态
 
+
+## P6.6 kw-11 轮（2026-09-03 深夜，卡 4）：C10 攻坚 3 轮未竟，15/16 终态收尾（硬停止）
+
+### 轮次记录（1 探针 + 2 修法，均未中 C10，全部无回归保留）
+
+1. **探针轮（d3a1e2c60 前，惰性魔数门控常驻）**：V2 DealBmm2ResBaseBlockAmla dump
+   分块后 tile 的行×D-chunk 代表元素 + 除数（metadata[601]=0x600D600D 激活，[602]=batch，
+   [900..995] 回读）。**定谳：脏行（h3）的 tile 本身 c2/c3 偏高 +35-40%（split 局部归一化
+   下与全局 +11% 定量自洽）→ 污染在 mm2 累计器本体，FD staging/combine 无罪**。
+2. **修法一（FIX_M/M_FIX 握手恢复）**：发现 MLA cube 把 A3 原设计的 L0C 双缓冲显式
+   FIX_M 等待注释掉换 unitFlag 链（GQA cube 保留完整纪律且 A5 稳定）→ 按原样移植回
+   mm1+mm2（7 处）。无效但为正确的缺失边补齐（硬ening 保留）。
+3. **修法二（V2C2 slot 复用反向边）**：host 判别 B1/B2/B4 同形全净 → 疑每核多任务的
+   slot 复用缺反向边（GQA 无条件有）→ 补齐（入口预置/每循环 set+wait/尾排空）。无效——
+   **且复判推翻触发条件：B8-kv2048 为 16 任务/28 核无复用仍脏**。硬ening 保留。
+
+### C10 残差终版登记（永久遗留）
+
+- **现象**：G≤2（actS1Size 小、vecDealM=16）且并发核数 ≥16 时脏；mere 0.83-0.97，
+  lse 全对；误差 = D 维 n-chunk 单调（c0/c1 恒净，c2/c3 二值脏），行内二值
+  （1.0000 或 ~1.11）；多峰 {10/9, 11/9, 12/9}（单位质量 ≈ 一个 512 块权重）；
+  每 split ≥2 循环才脏（单循环/nupdate 不跑时净）。
+- **已排除**（kw-10b/b2 + kw-11 三轮 + 探针）：mm2 cube M 链（垫 64/128）、fixpipe
+  mSize、L0C M/FIX 竞争（握手补齐无效）、slot 复用（反向边补齐无效 + 触发条件推翻）、
+  FD staging/combine（探针定位在累计器）、除数（D 均匀 vs D-chunk 选择）、
+  尾块几何（b0 无尾也脏）、B1-B4 布局（净）。
+- **剩余嫌疑**：≥16 并发核 + 小 m 的某种跨核/共享资源交互（L2/workspace/原子单元），
+  或 V1 AmlaVecCompute 小 m 状态链——需下一战役以探针轮开场（本探针基建已常驻可复用：
+  改 dump 目标为 mm2ResGm 原子链逐循环增量即可二分 fixpipe-atomic vs nupdate-atomic）。
+- C10 性能 0.699×（数值未收敛，仅参考）。
+
+### kw-11 提交链（终态，全部无回归）
+- 探针（惰性）+ FIX_M 握手恢复 + V2C2 反向边 —— 均保留为正确性硬ening
+- 最终二进制 = 上述 + kw-9a/9b + kw-10 + bt 钳位；GQA 终验 G1/G2 bit=True mere=0.0、
+  C21 6.3e-6（与 kw-4 终态逐位同值）；MLA 15/16 ulp 确定性。
+
 ### A3 隔离论证（kw-10 全部改动）
 
 尾宽膨胀（CalcParams）、bt 钳位（memory_copy.h）全 `#if __NPU_ARCH__==3510` 门控；

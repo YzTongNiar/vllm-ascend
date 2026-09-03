@@ -120,3 +120,19 @@ V2–V5 全部符号、按特性运行时路由）。底层 kernel 家族名为 
 对本报告数据的影响：无——所有 bit/ulp/mere 对照与性能对照的参照系自始至终是这同一个
 官方实现（V5），仅文档描述的 aclnn 版本号此前有误（写为 V2）。ulp 残差定性随之更精确：
 sink 的 SoftmaxFlashV2（c220 库）vs 官方 V5 的 ProcessVec1Vf MicroAPI 路径舍入序差。
+
+---
+
+## 附 4：kw-11 终态（2026-09-03，C10 攻坚 3 轮未竟，按硬停止线收尾）
+
+- C10 数学定性：ratio 多峰 {10/9, 11/9, 12/9} 等差族（单位质量≈一个 512 块权重，与 b0=8 块预测吻合）；
+  D-chunk 选择性二值污染（c2/c3 脏、c0/c1 永净）——覆写/污染类而非计数类
+- 探针实锤：污染在 **mm2 累计器本体**（tile 本身 c2/c3 偏高 +35-40%，与全局 +11% 定量自洽）；
+  FD staging/combine、除数均无罪
+- 两修法未中但保留为 hardening（无回归）：FIX_M/M_FIX 握手恢复（MLA cube 曾注释掉 A3 原设计的
+  L0C FIX_M 显式等待）+ V2C2 slot 反向边
+- **C10 永久遗留**：触发域 = G≤2（vecDealM=16）× 并发核 ≥16 × 每 split ≥2 循环；已排除 9 类假设；
+  下一战役建议 = 改 dump 为 mm2ResGm 原子链逐循环增量，一次二分 fixpipe-atomic vs nupdate-atomic
+  （探针基建已常驻，metadata[601] 魔数激活）
+- 终态：MLA **15/16 ulp** + GQA bit/ulp 零回退；提交 409de1ac5（探针）/3097c2886（FIX_M）/
+  3e4e36a4e（V2C2）；证据链 MIGRATION_NOTES §P6–P6.6
