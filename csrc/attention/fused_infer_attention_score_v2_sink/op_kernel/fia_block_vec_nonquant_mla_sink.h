@@ -1117,6 +1117,34 @@ __aicore__ inline void FiaBlockVecNonQuantMla<FIAT>::ProcessVec1L(const AiInfraI
 #endif
         }
 
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+        // [kw-12 逐循环累计器快照探针（惰性）] metadata[604]=0x600D600D 激活、[605]=batch
+        // 选择：本循环 nupdate/fixpipe 之后，从 mm2ResGm slot 标量抄 4 行 × 4 D-chunk
+        // 代表元素回 metadata[700+min(loop,7)*24]，逐循环定位首次污染（配 [603]
+        // nupdate 跳过可归属 fixpipe/nupdate）。仅 core0 偶 AIV 写（避免多核冲突）。
+        // 生产 metadata[604]=0 → 惰性（一次标量 GM 读）。仅 !batchInvariant 路径。
+        if (!constInfo.batchInvariant && metadataGm.GetValue(604U) == 0x600D600DU &&
+            GetBlockIdx() == 0U && info.bIdx == metadataGm.GetValue(605U)) {
+            uint32_t snapIdx = info.loop < 8U ? info.loop : 7U;
+            uint32_t base = 700U + snapIdx * 24U;
+            uint32_t slot = info.bn2IdxInCurCore % constInfo.preLoadNum;
+            for (uint32_t r = 0; r < 4U; r++) {
+                for (uint32_t k = 0; k < 4U; k++) {
+                    union {
+                        float f;
+                        uint32_t u;
+                    } cvt;
+                    cvt.f = mm2ResGm.GetValue(slot * constInfo.bmm2ResUbSize + r * headDim + 64U + k * 128U);
+                    metadataGm.SetValue(base + r * 4U + k, cvt.u);
+                }
+            }
+            metadataGm.SetValue(base + 16U, info.loop);
+            metadataGm.SetValue(base + 17U, info.bn2IdxInCurCore);
+            metadataGm.SetValue(base + 18U, info.tndCoreStartKVSplitPos);
+            metadataGm.SetValue(base + 19U, info.bIdx);
+        }
+#endif
+
         // move lse for flash decode
         if (info.isLastS2Loop) {
             uint32_t outIdx = info.loop % (constInfo.preLoadNum);
