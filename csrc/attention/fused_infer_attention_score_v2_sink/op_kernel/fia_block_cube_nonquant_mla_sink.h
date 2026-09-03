@@ -204,6 +204,14 @@ template <typename FIAT> class FiaBlockCubeNonQuantMla {
 
     static constexpr uint32_t mte21QPIds[4] = {L1_EVENT0, L1_EVENT1, L1_EVENT2, L1_EVENT3}; // mte12复用
     static constexpr uint32_t mte21KVIds[3] = {L1_EVENT4, L1_EVENT5, L1_EVENT6};
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    // kw-11: L0C 双缓冲的 FIX_M/M_FIX 显式同步事件（GQA cube 同款纪律，A3 原设计；
+    // MLA 变体曾以 unitFlag 链替代并注释掉显式等待——c220 够用，c310 小 m 时
+    // fixpipe 与后续 nL1 的 Mmad 在 L0C 上读写竞争）。HardEvent id 按事件对类型分
+    // 命名空间，与 MTE1_MTE2 的 L1_EVENT3/4 同值不冲突（GQA 先例）。
+    static constexpr uint32_t L0C_FIX_EVENT0 = EVENT_ID3;
+    static constexpr uint32_t L0C_FIX_EVENT1 = EVENT_ID4;
+#endif
 
 #ifdef BASE_MM
     AiInfraInferenceCommonFaBaseMatmul::BufferManager<
@@ -550,6 +558,11 @@ template <typename FIAT> __aicore__ inline void FiaBlockCubeNonQuantMla<FIAT>::A
     SetFlag<HardEvent::MTE1_MTE2>(L1_EVENT5);
     SetFlag<HardEvent::MTE1_MTE2>(L1_EVENT6);
 #endif
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    // kw-11: L0C 双缓冲初始置空（FIX 侧"已消费"），首次使用不等
+    SetFlag<HardEvent::FIX_M>(L0C_FIX_EVENT0);
+    SetFlag<HardEvent::FIX_M>(L0C_FIX_EVENT1);
+#endif
 }
 
 template <typename FIAT> __aicore__ inline void FiaBlockCubeNonQuantMla<FIAT>::FreeEventID()
@@ -565,6 +578,11 @@ template <typename FIAT> __aicore__ inline void FiaBlockCubeNonQuantMla<FIAT>::F
     WaitFlag<HardEvent::MTE1_MTE2>(L1_EVENT4);
     WaitFlag<HardEvent::MTE1_MTE2>(L1_EVENT5);
     WaitFlag<HardEvent::MTE1_MTE2>(L1_EVENT6);
+#endif
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    // kw-11: 排空最后一次 fixpipe 的 FIX_M 置位
+    WaitFlag<HardEvent::FIX_M>(L0C_FIX_EVENT0);
+    WaitFlag<HardEvent::FIX_M>(L0C_FIX_EVENT1);
 #endif
 
     mmL0ABuffers.Uninit(l0aBufferManager);
@@ -926,7 +944,11 @@ __aicore__ inline void FiaBlockCubeNonQuantMla<FIAT>::ProcessMm1(const AiInfraIn
 
                 // 使用unitflag同步
                 if (kL1 == 0) {
-                    // WaitFlag<HardEvent::FIX_M>(MmFixpEventId(cL0BufIter % 2));
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+                    // kw-11: 恢复 L0C 缓冲 FIX_M 等待（本缓冲上次 fixpipe 排空后才能被
+                    // 新一轮 Mmad 覆写；GQA 同款，c310 小 m 下 unitFlag 链不足）
+                    WaitFlag<HardEvent::FIX_M>(L0C_FIX_EVENT0 + cL0BufIter % 2);
+#endif
                 }
                 LocalTensor cL0Tensor =
                     cL0TensorPingPong[(cL0BufIter % 2) *
@@ -981,6 +1003,11 @@ __aicore__ inline void FiaBlockCubeNonQuantMla<FIAT>::ProcessMm1(const AiInfraIn
                 }
 
                 if (kL1 == 1) { // 最后一轮kL1循环
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+                    // kw-11: Mmad 完成事件（M→FIX）+ 自障碍，确保 fixpipe 读到完整 C
+                    SetFlag<HardEvent::M_FIX>(L0C_FIX_EVENT0 + cL0BufIter % 2);
+                    WaitFlag<HardEvent::M_FIX>(L0C_FIX_EVENT0 + cL0BufIter % 2);
+#endif
                     FixpipeParamsV220 fixParams;
                     fixParams.nSize = nL1SizeAlign;
                     fixParams.mSize = mL1SizeAlign;
@@ -996,6 +1023,10 @@ __aicore__ inline void FiaBlockCubeNonQuantMla<FIAT>::ProcessMm1(const AiInfraIn
                                      info.actualSingleProcessSInnerSizeAlign],
                         cL0Tensor,
                         fixParams);
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+                    // kw-11: fixpipe 排空事件（FIX→M），本缓冲可被后续 Mmad 覆写
+                    SetFlag<HardEvent::FIX_M>(L0C_FIX_EVENT0 + cL0BufIter % 2);
+#endif
                 }
                 if (mL1Loops == 2) {
                     cL0BufIter++;
@@ -1174,6 +1205,14 @@ __aicore__ inline void FiaBlockCubeNonQuantMla<FIAT>::ProcessMm2(const AiInfraIn
                 LocalTensor cL0Tensor =
                     cL0TensorPingPong[(cL0BufIter % 2) *
                                       (L0C_BLOCK_SIZE / sizeof(MM_OUT_T))]; // 需要保证cL0BufIter和m步调一致
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+                if (k1 == 0) {
+                    // kw-11: L0C 缓冲 FIX_M 等待（同 mm1 侧；C10 探针实证：小 m 时前一
+                    // nL1 的 fixpipe 与后续 nL1 的 Mmad 在 L0C 上读写竞争，累计器按
+                    // D 维 n-chunk 单调污染——正是本等待被注释掉后失去的保护）
+                    WaitFlag<HardEvent::FIX_M>(L0C_FIX_EVENT0 + cL0BufIter % 2);
+                }
+#endif
                 uint32_t baseK = 128;
                 uint32_t baseN = 128;
                 kL0Size = 128;
@@ -1227,6 +1266,11 @@ __aicore__ inline void FiaBlockCubeNonQuantMla<FIAT>::ProcessMm2(const AiInfraIn
                             SetAtomicAdd<MM_OUT_T>();
                         }
                     }
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+                    // kw-11: Mmad 完成事件（M→FIX）+ 自障碍，确保 fixpipe 读到完整 C
+                    SetFlag<HardEvent::M_FIX>(L0C_FIX_EVENT0 + cL0BufIter % 2);
+                    WaitFlag<HardEvent::M_FIX>(L0C_FIX_EVENT0 + cL0BufIter % 2);
+#endif
                     // ND
                     FixpipeParamsV220 fixParams;
                     fixParams.nSize = nL1SizeAlign;
@@ -1243,6 +1287,10 @@ __aicore__ inline void FiaBlockCubeNonQuantMla<FIAT>::ProcessMm2(const AiInfraIn
                         mm2ResGm[(fixpipeLoopIdx % (constInfo.preLoadNum)) * constInfo.bmm2ResUbSize + mm2Offset],
                         cL0Tensor,
                         fixParams);
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+                    // kw-11: fixpipe 排空事件（FIX→M），本缓冲可被后续 Mmad 覆写
+                    SetFlag<HardEvent::FIX_M>(L0C_FIX_EVENT0 + cL0BufIter % 2);
+#endif
 
                     if (!constInfo.batchInvariant && !info.isFirstSInnerLoop) {
                         SetAtomicNone();
