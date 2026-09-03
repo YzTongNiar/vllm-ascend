@@ -247,6 +247,11 @@ template <typename FIAT> class FiaBlockVecNonQuantMla {
     static constexpr uint64_t SYNC_INPUT_BUF2_PONG_FLAG = 5;
     static constexpr uint64_t SYNC_OUTPUT_BUF1_FLAG = 4;
     static constexpr uint64_t SYNC_OUTPUT_BUF2_FLAG = 5;
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    // kw-9b: nupdate(MTE3 原子加)→V2 读(MTE2) 的核内跨队列事件 ID。
+    // 注意 phase 内已占用 ID：attention 2/3/4/5，FD 合并 6..11 —— 取 1。
+    static constexpr uint8_t SYNC_NU_LANDED_ID = 1;
+#endif
     static constexpr uint32_t INPUT1_BUFFER_OFFSET = AiInfraInferenceAttentionCommon::ConstInfo::BUFFER_SIZE_BYTE_32K;
     static constexpr uint32_t INPUT2_BUFFER_OFFSET = AiInfraInferenceAttentionCommon::ConstInfo::BUFFER_SIZE_BYTE_8K;
     static constexpr uint32_t SOFTMAX_TMP_BUFFER_OFFSET =
@@ -1083,6 +1088,16 @@ __aicore__ inline void FiaBlockVecNonQuantMla<FIAT>::ProcessVec1L(const AiInfraI
             // add nUpdate to mm2ResGm
             ProcessAmlaNupdate(info, mSplitInfo);
 #if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+            // dav-c310 (kw-9b): AMLA 的 mm2ResGm 累计器由两条队列原子写入 —— AIC 的
+            // SetAtomicAdd fixpipe（跨核，已有 syncC2V2/PIPE_FIX 边）与本核 nupdate 的
+            // SetAtomicAdd<int32_t> DataCopy（MTE3 队列）。V2 角色（软流水下一轮，同核）
+            // 读 mm2ResGm 走 MTE2 队列，与 MTE3 原子加跨队列无序 → 最后一次负向 rescale
+            // 修正可能未落地 → 累计器偏大（C05/C07/C10 非确定性 +10~50%，全部 ratio>1）。
+            // 补 MTE3→MTE2 队列边：set 入 MTE3 队列在 nupdate 原子之后生效，
+            // V2 侧同迭代 wait（配对 1:1），阻塞其后的 mm2ResGm 读。
+            SetFlag<AscendC::HardEvent::MTE3_MTE2>(SYNC_NU_LANDED_ID);
+#endif
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
             CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_MTE3>(constInfo.syncV1NupdateC2);
 #else
             CrossCoreSetFlag<AiInfraInferenceAttentionCommon::ConstInfo::FIA_SYNC_MODE2, PIPE_MTE3>(
@@ -1233,6 +1248,11 @@ __aicore__ inline void FiaBlockVecNonQuantMla<FIAT>::ProcessVec2L(const AiInfraI
         }
 #if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
         CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_MTE2>(constInfo.syncC2V2);
+        if (!constInfo.batchInvariant) {
+            // kw-9b: 等 V1 角色同迭代的 nupdate 原子加落地（与 ProcessVec1L 的 set
+            // 每迭代 1:1 配对），再发 mm2ResGm 的 MTE2 读
+            WaitFlag<AscendC::HardEvent::MTE3_MTE2>(SYNC_NU_LANDED_ID);
+        }
 #else
         CrossCoreWaitFlag(constInfo.syncC2V2);
 #endif
