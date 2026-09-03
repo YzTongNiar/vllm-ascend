@@ -1020,6 +1020,17 @@ __aicore__ inline void FiaBlockCubeNonQuantMla<FIAT>::ProcessMm2(const AiInfraIn
 {
     uint32_t mSize = mSplitInfo.nBufferDealM;
     uint32_t mSizeAlign = (mSize + 16 - 1) / 16;
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    // dav-c310 (kw-10b)：mm2 的 P 链（P staging Nd2Nz 的 dstNzC0stride 与 L1->L0A V2 装载
+    // 的 mStep 均由 m 推导）在 16 对齐后 m < 64 时装载破损 → 累计器被污染（输出偏大、
+    // 恒正、lse 不受影响；host 边界实验：m=16/32/40/48 脏，m=56(C04)/64+ 净 —— 粒度 64）。
+    // 修法：mm2 链的处理 m 垫到 64。垫出的行 [m,64) 读 P staging slot 的过期区（仍在
+    // slot 内、无越界），其乘积写入累计器 slot 的 [m,64) 行 —— V2 只读 [0,actMBaseSize)
+    // 行，永不读出，数学无害。mm1 链（lse 干净）与 V1/AIV 侧不动；A3 路径零变化。
+    if (((mSize + 15U) >> 4 << 4) < 64U) {
+        mSize = 64U;
+    }
+#endif
     uint32_t mL1Loops = (mSize + M_L1_SPLIT_SIZE - 1) / M_L1_SPLIT_SIZE;
     uint32_t mL1SizeAlign = M_L1_SPLIT_SIZE; // 16对齐
     uint32_t mL1Size = M_L1_SPLIT_SIZE; // m的实际大小
