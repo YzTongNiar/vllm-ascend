@@ -1628,6 +1628,43 @@ __aicore__ inline void FiaBlockVecNonQuantMla<FIAT>::DealBmm2ResBaseBlockAmla(
         bmm2ResUb, tmpBmm2ResUb, tmpSumUb, dealRowCount, columnCount, actualColumnCount);
     AscendC::PipeBarrier<PIPE_V>();
 
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    // [kw-11 探针（惰性）] 宿主在 metadata[601]=0x600D600D、[602]=batch 激活。
+    // dump 分块后 tile 的行 r∈[0,4) × chunk k∈[0,4) 代表元素（r*columnCount + 64 + k*128）
+    // 与除数 tmpSumUb[r]、任务溯源。生产 metadata[601]=0 → 惰性（一次标量 GM 读）。
+    // 判读：tile 内 chunk2/3 ≈ 1.11×chunk0 → 污染已在累计器/V2 读之前；
+    // tile 各 chunk 均匀 → 污染在 V2 之后（FD staging/combine）。
+    if (info.isLastS2Loop && metadataGm.GetValue(601U) == 0x600D600DU) {
+        uint32_t selB = metadataGm.GetValue(602U);
+        if (info.bIdx == selB) {
+            uint32_t corePair = static_cast<uint32_t>(GetBlockIdx()) & ~1U;
+            if (corePair < 4U) {
+                uint32_t base = 900U + corePair * 24U;
+                for (uint32_t r = 0; (r < 4U) && (r < dealRowCount); r++) {
+                    for (uint32_t k = 0; k < 4U; k++) {
+                        union {
+                            float f;
+                            uint32_t u;
+                        } cvt;
+                        cvt.f = bmm2ResUb.GetValue(r * columnCount + 64U + k * 128U);
+                        metadataGm.SetValue(base + r * 4U + k, cvt.u);
+                    }
+                    union {
+                        float f;
+                        uint32_t u;
+                    } cvtD;
+                    cvtD.f = tmpSumUb.GetValue(r * 8U);
+                    metadataGm.SetValue(base + 16U + r, cvtD.u);
+                }
+                metadataGm.SetValue(base + 20U, info.loop);
+                metadataGm.SetValue(base + 21U, info.bn2IdxInCurCore);
+                metadataGm.SetValue(base + 22U, info.tndCoreStartKVSplitPos);
+                metadataGm.SetValue(base + 23U, dealRowCount);
+            }
+        }
+    }
+#endif
+
     SetFlag<AscendC::HardEvent::V_MTE2>(SYNC_INPUT_BUF1_FLAG + pingpongFlag);
     Bmm2ResCopyOut(info, mSplitInfo, bmm2ResUb, mStart, startRow, dealRowCount, columnCount, actualColumnCount);
 }
