@@ -1,0 +1,101 @@
+{
+  "a5_port": {
+    "task": "FIA v2 Sink 双算子 A3(Ascend910_93)→A5(Ascend950) 移植（执行阶段 + kw1-7 修复）",
+    "date_final": "2026-09-02",
+    "status": "done（ulp 口径收尾，bit 补齐列遗留）",
+    "base": {
+      "branch": "feat/fia-v2-sink",
+      "commit": "ded354d3d",
+      "handover_pkg": "/home/t00886357/fia_sink_a5_port_base_20260901.tar.gz",
+      "handover_sha256": "6c2070c6af5dfa961f5ace4d48ad24ddb0b3f373f98913c55cf6980e13f0dd02"
+    },
+    "port_branch": {
+      "branch": "feat/fia-v2-sink-a5",
+      "commit_functional": "1fccf73fa（kw-4 三刀修复 = 装机功能态）",
+      "commit_head": "22faaa0d1（kw-7 诊断基建，探针默认编译外，功能态不变）",
+      "history": "ded354d3d → d5c7216ca(P1 接线) → a5d21379b(kw-1) → 6f04215fd(kw-2 WIP) → d3de2cada(kw-3 裁决) → 1fccf73fa(kw-4 修复) → 361d72609(kw-6 VF 接入) → 22faaa0d1(kw-7 dump 基建)",
+      "repo": "/home/t00886357/fia_sink_a5_port_base/vllm-ascend"
+    },
+    "soc": {
+      "build_soc_version": "ascend950pr_9599",
+      "runtime_soc": "Ascend950PR_9579",
+      "core_arch": "dav-c310 (NpuArch 3510, __NPU_ARCH__==3510)",
+      "aic_cores": 28, "aiv_cores": 56,
+      "core_combine": "split (taskRation=2, blockDim=28)",
+      "l0a_bytes": 65536, "l0b_bytes": 65536, "l0c_bytes": 262144,
+      "l1_bytes": 524288, "ub_bytes": 253952, "aicpu_cores": 7,
+      "cann": "/usr/local/Ascend/cann-9.1.0",
+      "torch": "2.10.0+cpu", "torch_npu": "2.10.0.post4"
+    },
+    "root_causes_fixed": [
+      "① Q→L0A 装载失效：LoadAToL0 的 load3d/LOAD3DV2_CONFIG 在 dav-c310 读错位 L1（q=0 时 P=2.07e9 且 q 敏感）。修法：3510 门控改调 matmul.h 310 分支独立函数 LoadDataToL0A<MK>",
+      "② M>16 双 AIV 跨核竞态：mode-2 flag 双 setter（SetMSplitInfo 拆双 AIV）时 AIC 提前放行，同输入两跑 0.82/0.41 非确定。修法：8 处同步点 mode-4 intra-block + 消费队列 wait + AIC 双等（flag+16）",
+      "③ M>16 多 m 分形确定性破损：行带状错。修法：A5 下 M 维按 16 行粒度保守切分（mm1/mL0 + mm2），限定已验证单分形域"
+    ],
+    "verification": {
+      "verdict_source": "user_decision.md 追加裁决（2026-09-02）：ulp 口径收尾",
+      "scope": "G1/G2 bit；G3-G5+C21-C26 ulp（mere≤1e-4 且 max_abs≤2 bf16 ulp）；MLA 族 finite+shape；性能 kernel-bound 净赚",
+      "device": "950PR card 2",
+      "g1_mqa_c27_d192": {"bit_exact": true, "mere": 0.0},
+      "g2_mqa_c28_d128": {"bit_exact": true, "mere": 0.0},
+      "g3_c21": {"bit_exact": false, "mere": 6.3e-06, "max_abs_ulp": 1},
+      "g4_kvlen_4096": {"bit_exact": false, "mere": 3.0e-05, "max_abs_ulp": 1},
+      "g4_kvlen_32768": {"bit_exact": false, "mere": 9.4e-06, "max_abs_ulp": 1},
+      "g5_b2_248": {"bit_exact": false, "mere": 1.8e-07, "max_abs_ulp": 1, "note": "值依赖：替代随机数据 bit 全对"},
+      "g6_c01_mla": {"pass": true, "out": "(64,16,512)", "finite": true},
+      "c22_c26_family": "全 bit=False，mere 2.0e-06~3.4e-05，1-2 ulp（同性质舍入序差，无新形态错误）",
+      "mla_spot": "C02/C03/C09 全 finite+shape 正确",
+      "q0_controlled": "56/56 过（lse 全=log(kvlen)，out≈V 均值）",
+      "ulp_residual_nature": "SoftmaxFlashV2 与官方 ProcessVec1Vf 的多 S2 循环 update 舍入次序差；单循环形态 bit 全对；lse 层差 ≤1 fp32 ulp（1/56、2/56、23/960 元素）；与 A3 接口文档 §8 已知注记同性质且量级更小",
+      "official_baseline_selfcheck": "官方 B=2 单调用 vs B=1×2 拼接 bit 自洽（参照系无罪）",
+      "a3_regression": "未实测（本机无 910_93）。静态论证：kw1-7 全部改动位于 #if __NPU_ARCH__==3510 / FIA_A5_DEBUG_DUMP（编译外）/ A5 条件 depends staging 内，A3 路径逐字节不变。遗留：回 A3 环境跑全量门禁终验（A3 自 kw-1 起未编译验证）"
+    },
+    "perf": {
+      "method": "sink 两段式（metadata+主算子完整成本）vs 官方，wall-clock 中位，20 轮，卡 2",
+      "S1_r96_gs8_kv256k": {"sink_ms": 4.076, "official_ms": 4.769, "ratio": 0.855, "verdict": "kernel-bound 净赚 14.5%"},
+      "S2_r96_gs8_kv512k": {"sink_ms": 7.968, "official_ms": 9.550, "ratio": 0.834, "verdict": "kernel-bound 净赚 16.6%"},
+      "kvlen_4096": {"sink_ms": 0.159, "official_ms": 0.068, "ratio": 2.343, "verdict": "launch-bound 净亏（固定成本主导）"},
+      "g1_short_kv20": {"sink_ms": 0.161, "official_ms": 0.057, "ratio": 2.826, "verdict": "launch-bound 净亏（同 A3 行为注记）"},
+      "headline": "A5 kernel-bound 提升 14-17%，显著优于 A3 基线 ~3%（X47 卡 C19/C20）",
+      "artifacts": "results/a5_port/perf/{perf_sink_vs_official.py,perf_a5_result.json}"
+    },
+    "h_verdicts_final": {
+      "H1": "表 36/72 不改 + FIA_MAX_AIC_CORE_NUM 26→36（kernel 侧越界防护）",
+      "H2": "零改动（L1/L0A/L0B 容量 A3/A5 全同）",
+      "H3": "编译通过；行为由门禁验证（G1/G2 bit 绿）",
+      "H4": "零硬编码，跟随工具链",
+      "H5": "arch35=A5（修正交接笔误）；扁平布局保持",
+      "H6": "三项根因修复（A 装载/双 AIV 竞态/M 分形）后 G1/G2 bit 绿、余 1-2 ulp（舍入序差，非指令错误）"
+    },
+    "leftovers": [
+      "bit 补齐（非阻塞）：ProcessVec1Vf 移植的 dst strided store 布局两次探针未钉死（多窗拼装一致性存疑）；重启路径 = MIGRATION_NOTES.md P4 kw-7 节（attentionOutput 尾行单窗 dump 免拼装 / FlashMLA UB_VEC1_RES 注释反推）",
+      "910_93 回归终验：回 A3 环境跑全量门禁（七门禁 + C01-C26）",
+      "BRC softmax 分支：ProcessVec1Vf 若单形态，BRC 形态覆盖待门禁族扩展",
+      "M>128 的 mL0 级 staging：当前 A5 保守分块覆盖门禁族 gS1≤128，更大 M 需扩展"
+    ],
+    "knowledge_fixed": [
+      "构建系统第 4 坑：add_ops_src_copy 的 src staging done flag 不跟踪源码修改（此前 P1 三坑之外）；修正版重编纪律（清 src staging + gen/*.done + bin/<op> + gen/kernel_meta_*）",
+      "arch35 VF 库接入三坑解法：depends staging / 相对 include 层深（2 层）/ namespace 包裹（FiaVfLib{#include}）",
+      "V→MTE3 dump 同步（HardEvent::V_MTE3(5)）修复 UB 直读探针方法论",
+      "dav-c310 的 load3d 不可用于 L1→L0A 装载（读错位）；正确路径 = matmul.h 310 分支 LoadDataToL0A 独立函数版",
+      "mode-2 跨核 flag 在双 setter 场景的提前放行竞态模式与 mode-4 修法",
+      "官方 A5 vs 本算子的 ulp 差源于 ProcessVec1Vf 与 SoftmaxFlashV2 的 update 舍入序（单循环 bit 一致）"
+    ],
+    "gate_env": "FIA_GATE_TREE=<tree>; ASCEND_CUSTOM_OPP_PATH=<tree>/vllm_ascend/_cann_ops_custom:<...>/vendors/custom_transformer; ASCEND_RT_VISIBLE_DEVICES=2; scripts=a5_port_base_supplement/tests_pr15336",
+    "rebuild_discipline": "rm -rf csrc/build/binary/ascend950/src/<op> + rm -f gen/fused_infer_attention_score_v2_sink*.done + rm -rf bin/fused_infer_attention_score_v2_sink + rm -rf gen/kernel_meta_<OP>_* ; SOC_VERSION=ascend950pr_9599 MAX_JOBS=64 bash build.sh --fast",
+    "deliverables": {
+      "gate_consistency": "results/a5_port/GATE_CONSISTENCY.md（全量双列终表）",
+      "migration_notes": "results/a5_port/MIGRATION_NOTES.md（P0-P4 全程证据链）",
+      "decisions": "results/a5_port/user_decision.md（A 路线 + ulp 口径两裁决）",
+      "perf": "results/a5_port/perf/",
+      "probe_scripts": "results/a5_port/probe_scripts/（q=0 快检等 7 个）",
+      "build_logs": "results/a5_port/build_a5_{01..10}.log + agent 各轮"
+    },
+    "upstream_gift_candidate": [
+      "add_ops_compile_options 在 BUILD_OPS_RTY_KERNEL 分支内被静默丢弃",
+      "custom_compile_options.ini 变更不触发重编（ninja 无依赖跟踪）",
+      "gen/*.done stamp 与 bin 产物脱钩",
+      "add_ops_src_copy staging 不跟踪源码修改（第 4 坑，本轮最大时间消耗源）"
+    ]
+  }
+}
