@@ -184,21 +184,23 @@ template <typename FIAT> __aicore__ inline void FiaBlockVecFlashDecode<FIAT>::In
 {
     if ASCEND_IS_AIV {
         pipe->Reset();
-        pipe->InitBuffer(fdSumBuf1,
-                         AiInfraInferenceAttentionCommon::ConstInfo::BUFFER_SIZE_BYTE_4K +
-                             AiInfraInferenceAttentionCommon::ConstInfo::BUFFER_SIZE_BYTE_2K);
-        pipe->InitBuffer(fdSumBuf2,
-                         AiInfraInferenceAttentionCommon::ConstInfo::BUFFER_SIZE_BYTE_4K +
-                             AiInfraInferenceAttentionCommon::ConstInfo::BUFFER_SIZE_BYTE_2K);
-        pipe->InitBuffer(fdMaxBuf1,
-                         AiInfraInferenceAttentionCommon::ConstInfo::BUFFER_SIZE_BYTE_4K +
-                             AiInfraInferenceAttentionCommon::ConstInfo::BUFFER_SIZE_BYTE_2K);
-        pipe->InitBuffer(fdMaxBuf2,
-                         AiInfraInferenceAttentionCommon::ConstInfo::BUFFER_SIZE_BYTE_4K +
-                             AiInfraInferenceAttentionCommon::ConstInfo::BUFFER_SIZE_BYTE_2K);
-        pipe->InitBuffer(fdLseExpBuf,
-                         AiInfraInferenceAttentionCommon::ConstInfo::BUFFER_SIZE_BYTE_4K +
-                             AiInfraInferenceAttentionCommon::ConstInfo::BUFFER_SIZE_BYTE_2K);
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+        // dav-c310 (A5): AICPU 校验允许 maxS2SplitNum = aicCoreNum + 1（A5 28 核 → 29 份），
+        // CopyLseIn 的 lseSum/lseMax 装载需 maxS2SplitNum * M_FD_BASE(8行) * 8pad * 4B
+        // = 29 * 256B = 7424B。原 4K+2K = 6144B 仅容 24 份 → 头少长KV（B1、s2SplitNum 26-28）
+        // 的 MLA case UB 越界写，FD combine 归一化分母损坏（实测 out ≈ 3x 官方值）。
+        // 扩到 8K（32 份）。A3 (c220) 保持原 6144B：核数 24 → metadata 切分 ≤ 24 份 = 6144B
+        // 恰好不越界，A3 路径零变化。
+        constexpr uint32_t FD_LSE_BUF_BYTES = AiInfraInferenceAttentionCommon::ConstInfo::BUFFER_SIZE_BYTE_8K;
+#else
+        constexpr uint32_t FD_LSE_BUF_BYTES = AiInfraInferenceAttentionCommon::ConstInfo::BUFFER_SIZE_BYTE_4K +
+                                             AiInfraInferenceAttentionCommon::ConstInfo::BUFFER_SIZE_BYTE_2K;
+#endif
+        pipe->InitBuffer(fdSumBuf1, FD_LSE_BUF_BYTES);
+        pipe->InitBuffer(fdSumBuf2, FD_LSE_BUF_BYTES);
+        pipe->InitBuffer(fdMaxBuf1, FD_LSE_BUF_BYTES);
+        pipe->InitBuffer(fdMaxBuf2, FD_LSE_BUF_BYTES);
+        pipe->InitBuffer(fdLseExpBuf, FD_LSE_BUF_BYTES);
         pipe->InitBuffer(fdMm2ResBuf1, AiInfraInferenceAttentionCommon::ConstInfo::BUFFER_SIZE_BYTE_16K);
         pipe->InitBuffer(fdMm2ResBuf2, AiInfraInferenceAttentionCommon::ConstInfo::BUFFER_SIZE_BYTE_16K);
         pipe->InitBuffer(fdReduceBuf, AiInfraInferenceAttentionCommon::ConstInfo::BUFFER_SIZE_BYTE_16K);
