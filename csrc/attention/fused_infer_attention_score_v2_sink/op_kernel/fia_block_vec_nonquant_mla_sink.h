@@ -958,6 +958,18 @@ __aicore__ inline void FiaBlockVecNonQuantMla<FIAT>::ProcessAmlaNupdate(
         SetFlag<AscendC::HardEvent::V_MTE3>(SYNC_OUTPUT_BUF1_FLAG);
         WaitFlag<AscendC::HardEvent::V_MTE3>(SYNC_OUTPUT_BUF1_FLAG);
 
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+        // [kw-12 A/B 探针（惰性）] 宿主在 metadata[603]=0x600D600D 时跳过 nupdate 的
+        // 原子加 DataCopy（保留 Brcb 等前序 MTE3 流量以近似时延；事件配平不变）。
+        // 判别：跳过后 C02/C10 若转净 → nupdate 原子链为污染源；若不变 → 转向
+        // fixpipe 原子链。生产 metadata[603]=0 → 原路径。
+        if (metadataGm.GetValue(603U) == 0x600D600DU) {
+            SetFlag<AscendC::HardEvent::MTE3_V>(SYNC_OUTPUT_BUF1_FLAG);
+            SetFlag<AscendC::HardEvent::MTE3_V>(SYNC_OUTPUT_BUF2_FLAG);
+            return;
+        }
+#endif
+
         uint64_t baseoffset = (info.bn2IdxInCurCore % constInfo.preLoadNum) * constInfo.bmm2ResUbSize +
                               (mSplitInfo.nBufferStartM + mSplitInfo.vecStartM + loop * mSplitSize) * headDim;
 
