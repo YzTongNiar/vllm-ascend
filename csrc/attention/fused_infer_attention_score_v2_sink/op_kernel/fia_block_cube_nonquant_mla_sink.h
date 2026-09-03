@@ -602,9 +602,28 @@ __aicore__ inline void FiaBlockCubeNonQuantMla<FIAT>::CopyInMm2AToL1(
     uint32_t nOffset)
 {
     // 全量拷贝 确认是否是紧密排布, actualSingleProcessSInnerSize是否需要32B对齐
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    // dav-c310 (kw-9c): 尾 S2 循环 (kL1Size < 256) 时，A 侧 L1 tile 仅刷新 [0..kL1Size)，
+    // [kL1Size..256) 保留上一循环（最后一个完整 512 块）的 P 残留；mmad 的 k 扩展会消费
+    // 该残留 → 最后完整块的贡献被重放（输出 +~1 块权重、恒正、lse 不受影响）。
+    // 修法：拷贝宽度固定 256（整循环时与原语义 kL1Size=256 完全等价）、行距固定 s2BaseSize
+    // （整循环时即 actualS2Align），配 V1 侧尾循环 P staging 的 stride-s2BaseSize +
+    // pad 补零（见 DealBmm1ResBaseBlock），使 L1 tile 整块被 [fresh P | 0] 刷新，
+    // 任何 k 向扩展乘到 0。s2BaseSize < 512 时布局假设不成立，回退原语义。
+    uint32_t copyD = nSize;
+    uint32_t copyStride = info.actualSingleProcessSInnerSizeAlign;
+    if (constInfo.s2BaseSize >= 512U) {
+        copyD = 256U;
+        copyStride = constInfo.s2BaseSize;
+    }
+    auto srcGm = vec1ResGm[(info.loop % constInfo.preLoadNum) * constInfo.mmResUbSize +
+                           mSeqIdx * copyStride + nOffset];
+    CopyGmToL1(aL1Tensor, srcGm, subMSizeAct, copyD, copyStride);
+#else
     auto srcGm = vec1ResGm[(info.loop % constInfo.preLoadNum) * constInfo.mmResUbSize +
                            mSeqIdx * info.actualSingleProcessSInnerSizeAlign + nOffset];
     CopyGmToL1(aL1Tensor, srcGm, subMSizeAct, nSize, info.actualSingleProcessSInnerSizeAlign);
+#endif
 }
 
 template <typename FIAT> __aicore__ inline void FiaBlockCubeNonQuantMla<FIAT>::ComputeMm1(const RunInfo &info)
