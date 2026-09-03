@@ -908,53 +908,8 @@ __aicore__ inline void FiaBlockVecNonQuantMla<FIAT>::DealBmm1ResBaseBlock(
 
     SetFlag<AscendC::HardEvent::V_MTE3>(SYNC_OUTPUT_BUF1_FLAG);
     WaitFlag<AscendC::HardEvent::V_MTE3>(SYNC_OUTPUT_BUF1_FLAG);
-#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
-    // dav-c310 (kw-9c): 尾 S2 循环 (columnCount < s2BaseSize) 时 P staging 行距由
-    // columnCount(=Align(尾宽,32)) 改为固定 s2BaseSize，并把 [columnCount..s2BaseSize)
-    // pad 区补零（分块复用 outputBuff1），配 AIC CopyInMm2AToL1 的 256 定宽整块刷新，
-    // 使 mm2 A 侧 L1 tile 变为 [fresh P | 0]，消灭上一循环 P 的 L1 残留（尾块贡献重放）。
-    // 整循环 columnCount == s2BaseSize，走原紧凑 DataCopy，行为不变。
-    if (columnCount < constInfo.s2BaseSize && constInfo.s2BaseSize >= 512U) {
-        uint32_t rowBase = mSplitInfo.nBufferStartM + mSplitInfo.vecStartM + startRow;
-        uint64_t writeOffset = (info.loop % constInfo.preLoadNum) * constInfo.mmResUbSize +
-                               static_cast<uint64_t>(rowBase) * constInfo.s2BaseSize;
-        DataCopyExtParams freshParams;
-        freshParams.blockCount = dealRowCount;
-        freshParams.blockLen = columnCount * sizeof(KV_T);
-        freshParams.srcStride = 0;
-        freshParams.dstStride = (constInfo.s2BaseSize - columnCount) * sizeof(KV_T) /
-                                AiInfraInferenceCommonFaBaseVector::BYTE_BLOCK;
-        DataCopyPad(vec1ResGm[writeOffset], tmpMMResCastTensor, freshParams);
-        SetFlag<AscendC::HardEvent::MTE3_V>(SYNC_OUTPUT_BUF1_FLAG);
-        // pad 补零: [columnCount, s2BaseSize) 每行, 16 行/块 (16×448×2B=14K ≤ 32K buffer)
-        constexpr uint32_t PAD_CHUNK_ROWS = 16;
-        uint32_t padCols = constInfo.s2BaseSize - columnCount;
-        uint32_t chunkRows = PAD_CHUNK_ROWS;
-        for (uint32_t r = 0; r < dealRowCount; r += PAD_CHUNK_ROWS) {
-            chunkRows = (dealRowCount - r < PAD_CHUNK_ROWS) ? (dealRowCount - r) : PAD_CHUNK_ROWS;
-            WaitFlag<AscendC::HardEvent::MTE3_V>(SYNC_OUTPUT_BUF1_FLAG);
-            Duplicate(tmpMMResCastTensor, static_cast<KV_T>(0), chunkRows * padCols);
-            AscendC::PipeBarrier<PIPE_V>();
-            SetFlag<AscendC::HardEvent::V_MTE3>(SYNC_OUTPUT_BUF1_FLAG);
-            WaitFlag<AscendC::HardEvent::V_MTE3>(SYNC_OUTPUT_BUF1_FLAG);
-            DataCopyExtParams padParams;
-            padParams.blockCount = chunkRows;
-            padParams.blockLen = padCols * sizeof(KV_T);
-            padParams.srcStride = 0;
-            padParams.dstStride = columnCount * sizeof(KV_T) /
-                                  AiInfraInferenceCommonFaBaseVector::BYTE_BLOCK;
-            DataCopyPad(vec1ResGm[writeOffset + static_cast<uint64_t>(r) * constInfo.s2BaseSize + columnCount],
-                        tmpMMResCastTensor, padParams);
-            SetFlag<AscendC::HardEvent::MTE3_V>(SYNC_OUTPUT_BUF1_FLAG);
-        }
-    } else {
-        DataCopy(vec1ResGm[inOutGmOffset], tmpMMResCastTensor, computeSize);
-        SetFlag<AscendC::HardEvent::MTE3_V>(SYNC_OUTPUT_BUF1_FLAG);
-    }
-#else
     DataCopy(vec1ResGm[inOutGmOffset], tmpMMResCastTensor, computeSize);
     SetFlag<AscendC::HardEvent::MTE3_V>(SYNC_OUTPUT_BUF1_FLAG);
-#endif
 }
 
 template <typename FIAT>
