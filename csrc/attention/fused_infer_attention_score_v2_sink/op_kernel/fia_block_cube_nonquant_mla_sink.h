@@ -1078,6 +1078,16 @@ __aicore__ inline void FiaBlockCubeNonQuantMla<FIAT>::ProcessMm2(const AiInfraIn
         CrossCoreWaitFlag(constInfo.syncV2C2);
 #endif
     }
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    // kw-11: !batchInvariant 下 mm2Res slot 以 bn2IdxInCurCore%2 复用且无反向边 ——
+    // 同核第 3 个任务的首循环 fixpipe（覆盖写）可追上 V2 对第 1 个任务的读（小 m 时
+    // AIC 快于 V2 软流水）。补等 V2C2（对内双 AIV 各一次，kw-4b 同款），使 slot 覆写
+    // 发生在 V2 读毕之后。与 V1NupdateC2 的既有每循环等待共存（电平语义容忍叠加）。
+    else {
+        CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncV2C2);
+        CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncV2C2 + FIA_CROSS_AIV1_OFFSET);
+    }
+#endif
 #ifdef BASE_MM
     AiInfraInferenceCommonFaBaseMatmul::Buffer<AiInfraInferenceCommonFaBaseMatmul::BufferType::L1> mm2A;
     AiInfraInferenceCommonFaBaseMatmul::Buffer<AiInfraInferenceCommonFaBaseMatmul::BufferType::L1> mm2B;

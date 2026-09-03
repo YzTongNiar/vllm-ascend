@@ -1265,6 +1265,16 @@ __aicore__ inline void FiaBlockVecNonQuantMla<FIAT>::ProcessVec2L(const AiInfraI
         CrossCoreSetFlag<ConstInfo::FIA_SYNC_MODE2, PIPE_MTE3>(constInfo.syncV2C2);
 #endif
     }
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    // kw-11: !batchInvariant 也置 V2C2 反向旗标 —— host 判别实锤：B1/B2/B4 同形全净、
+    // 仅每核多任务（uCore>16，T+2 任务首循环 fixpipe 覆写 slot）时脏；小 m（AIC 快于
+    // V2 软流水）时覆写追上 V2 对 T 的读 → 累计器按 D 维 n-chunk 单调污染（覆写进度）。
+    // GQA 路径无条件有此边；配平语义与既有 V1NupdateC2 同款（每任务 1 set，AIC 每
+    // 任务首 fixpipe 1 wait，电平容忍）。
+    else {
+        CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_MTE3>(constInfo.syncV2C2);
+    }
+#endif
 }
 
 template <typename FIAT>

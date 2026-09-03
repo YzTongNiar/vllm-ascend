@@ -1262,6 +1262,15 @@ __aicore__ inline void FiaKernelNonQuantMla<FIAT, CubeBlockType, VecBlockType, F
 #endif
         }
     }
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    // kw-11: !batchInvariant 的 V2C2 预置（配 ProcessVec2L 的每循环 set 与 ProcessMm2
+    // 顶部的每循环 wait，AIC 首次等待不挂）
+    else {
+        if ASCEND_IS_AIV {
+            CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_MTE3>(constInfo.syncV2C2);
+        }
+    }
+#endif
     while (shouldDispatchTask || shouldExecuteTask) {
         WholeCount++;
         // 分发任务
@@ -1300,5 +1309,14 @@ __aicore__ inline void FiaKernelNonQuantMla<FIAT, CubeBlockType, VecBlockType, F
 #endif
         }
     }
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    // kw-11: !batchInvariant 的尾排空（消费入口预置的 surplus；对内双 AIV 各一次）
+    else {
+        if ASCEND_IS_AIC {
+            CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncV2C2);
+            CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncV2C2 + FIA_CROSS_AIV1_OFFSET);
+        }
+    }
+#endif
 }
 #endif // FIA_KERNEL_NONQUANT_MLA_SINK_H
