@@ -503,6 +503,14 @@ class BlockTableParser {
 
     __aicore__ inline int32_t GetBlockIdx(uint32_t bIdx, uint32_t blockIdxInBatch) const
     {
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+        // dav-c310 (kw-10 安全钳位)：S2 尾循环宽度膨胀（见 CalcParams）后，pad 列的
+        // K/V 装载会请求超出该 batch 槽位的块号；当本 batch 即最宽 batch 时越过
+        // block table 张量宽度 → OOB 读（实测 507015，分配器相关、间歇触发）。
+        // 钳到张量宽度内：非膨胀路径的块号恒 < maxblockNumPerBatch（行为不变）；
+        // pad 列数据被 sm3 mask 置零，值无意义，仅需保证不越界。
+        blockIdxInBatch = blockIdxInBatch < maxblockNumPerBatch ? blockIdxInBatch : maxblockNumPerBatch - 1U;
+#endif
         return blockTableGm.GetValue(bIdx * maxblockNumPerBatch + blockIdxInBatch);
     }
 
