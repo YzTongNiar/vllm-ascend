@@ -61,7 +61,7 @@ git clone -b feat/fia-v2-sink-a5 <remote> vllm-ascend   # 代码仓放回嵌套�
 ## 3. 测试环境（每 shell）
 
 ```bash
-cd <包>/a5_port_base_supplement/tests_pr15336    # ⚠️ 补充包在包外 /home/t00886357/a5_port_base_supplement——跨机需随工作区带走（含原值 case_builder/gqa_case_builder/fia_v2_cases.csv）
+cd <包>/a5_port_base_supplement/tests_pr15336    # 补充包已收入包内（含 4 处适配的门禁脚本 + 原值 case 数据）
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
 export ASCEND_RT_VISIBLE_DEVICES=<空闲卡>
 export FIA_GATE_TREE=<包>/vllm-ascend
