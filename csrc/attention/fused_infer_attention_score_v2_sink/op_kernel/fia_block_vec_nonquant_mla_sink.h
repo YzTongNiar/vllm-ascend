@@ -1118,26 +1118,33 @@ __aicore__ inline void FiaBlockVecNonQuantMla<FIAT>::ProcessVec1L(const AiInfraI
         }
 
 #if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
-        // [kw-12 逐循环累计器快照探针（惰性）] metadata[604]=0x600D600D 激活、[605]=batch
-        // 选择：本循环 nupdate/fixpipe 之后，从 mm2ResGm slot 标量抄 4 行 × 4 D-chunk
-        // 代表元素回 metadata[700+min(loop,7)*24]，逐循环定位首次污染（配 [603]
-        // nupdate 跳过可归属 fixpipe/nupdate）。仅 core0 偶 AIV 写（避免多核冲突）。
-        // 生产 metadata[604]=0 → 惰性（一次标量 GM 读）。仅 !batchInvariant 路径。
+        // [kw-13 逐循环累计器快照探针 v2（惰性）] metadata[604]=0x600D600D 激活、[605]=batch。
+        // kw-12 版全零根因：标量 GM 读走 S 队列，未被 MTE2 队列的 C2V1 等待约束（读早于
+        // fixpipe 落地）。本版改 MTE2 DataCopy（天然排序在 C2V1 等待后）到 inputBuff2，
+        // 经 MTE2_V 事件后在标量域读 UB（kw-11 tile 探针验证的时序模式）。
+        // dump: 本 (task,loop) 的 mm2Res slot 前 4 行 × 4 D-chunk 代表元素 + 溯源，
+        // 写 metadata[700+min(loop,7)*24]。仅 core0 偶 AIV。生产 [604]=0 → 惰性。
         if (!constInfo.batchInvariant && metadataGm.GetValue(604U) == 0x600D600DU &&
             GetBlockIdx() == 0U && info.bIdx == metadataGm.GetValue(605U)) {
             uint32_t snapIdx = info.loop < 8U ? info.loop : 7U;
             uint32_t base = 700U + snapIdx * 24U;
             uint32_t slot = info.bn2IdxInCurCore % constInfo.preLoadNum;
+            LocalTensor<T> snapUb = inputBuff2.Get<T>();
+            WaitFlag<AscendC::HardEvent::V_MTE2>(SYNC_INPUT_BUF2_FLAG);
+            DataCopy(snapUb, mm2ResGm[slot * constInfo.bmm2ResUbSize], 4U * headDim);
+            SetFlag<AscendC::HardEvent::MTE2_V>(SYNC_INPUT_BUF2_FLAG);
+            WaitFlag<AscendC::HardEvent::MTE2_V>(SYNC_INPUT_BUF2_FLAG);
             for (uint32_t r = 0; r < 4U; r++) {
                 for (uint32_t k = 0; k < 4U; k++) {
                     union {
                         float f;
                         uint32_t u;
                     } cvt;
-                    cvt.f = mm2ResGm.GetValue(slot * constInfo.bmm2ResUbSize + r * headDim + 64U + k * 128U);
+                    cvt.f = snapUb.GetValue(r * headDim + 64U + k * 128U);
                     metadataGm.SetValue(base + r * 4U + k, cvt.u);
                 }
             }
+            SetFlag<AscendC::HardEvent::V_MTE2>(SYNC_INPUT_BUF2_FLAG);
             metadataGm.SetValue(base + 16U, info.loop);
             metadataGm.SetValue(base + 17U, info.bn2IdxInCurCore);
             metadataGm.SetValue(base + 18U, info.tndCoreStartKVSplitPos);
