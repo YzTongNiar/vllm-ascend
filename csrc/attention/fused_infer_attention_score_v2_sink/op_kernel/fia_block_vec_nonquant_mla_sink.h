@@ -1663,6 +1663,29 @@ __aicore__ inline void FiaBlockVecNonQuantMla<FIAT>::DealBmm2ResBaseBlockAmla(
     SetFlag<AscendC::HardEvent::MTE2_V>(SYNC_INPUT_BUF1_FLAG);
     WaitFlag<AscendC::HardEvent::MTE2_V>(SYNC_INPUT_BUF1_FLAG);
 
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    // [kw-13 V2 双读判别-首读采样（惰性）] metadata[606] 激活时，首读 raw 留档到
+    // [820 + (blockIdx%2)*40]（2 行 × 4 chunk）；RowDivs 后的重读在函数尾 [800+..]。
+    // 两次不一致 → V2 处理期间仍有原子写在飞行。
+    if (info.isLastS2Loop && metadataGm.GetValue(606U) == 0x600D600DU && info.bIdx == metadataGm.GetValue(602U)) {
+        uint32_t corePairE = static_cast<uint32_t>(GetBlockIdx()) & ~1U;
+        if (corePairE < 4U) {
+            uint32_t baseE = 820U + (static_cast<uint32_t>(GetBlockIdx()) % 2U) * 40U;
+            for (uint32_t r = 0; (r < 2U) && (r < dealRowCount); r++) {
+                for (uint32_t k = 0; k < 4U; k++) {
+                    union {
+                        float f;
+                        uint32_t u;
+                    } cvt;
+                    cvt.f = tmpBmm2ResUb.GetValue(r * columnCount + 64U + k * 128U);
+                    metadataGm.SetValue(baseE + r * 4U + k, cvt.u);
+                }
+            }
+            metadataGm.SetValue(baseE + 8U, info.loop);
+        }
+    }
+#endif
+
     LocalTensor<T> bmm2ResUb = tmpBuff1.Get<T>();
     bmm2ResUb.SetSize(vec2ComputeSize);
 
@@ -1723,6 +1746,40 @@ __aicore__ inline void FiaBlockVecNonQuantMla<FIAT>::DealBmm2ResBaseBlockAmla(
 #endif
 
     SetFlag<AscendC::HardEvent::V_MTE2>(SYNC_INPUT_BUF1_FLAG + pingpongFlag);
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    // [kw-13 V2 双读判别（惰性）] metadata[606]=0x600D600D 激活：RowDivs 之后再次
+    // MTE2 重读同一 slot 区域（时间上晚于首读一个 RowDivs+事件 的距离），dump 到
+    // metadata[800 + (blockIdx%2)*40]。两次读不一致 → V2 处理期间末循环原子写仍在
+    // 飞行（写侧时序缺陷）；一致 → GM 内容稳定（读路径/更早写入嫌疑）。
+    // 生产 [606]=0 → 惰性。
+    if (info.isLastS2Loop && metadataGm.GetValue(606U) == 0x600D600DU && info.bIdx == metadataGm.GetValue(602U)) {
+        uint32_t corePair = static_cast<uint32_t>(GetBlockIdx()) & ~1U;
+        if (corePair < 4U) {
+            LocalTensor<T> reUb = inputBuff2.Get<T>();
+            WaitFlag<AscendC::HardEvent::V_MTE2>(SYNC_INPUT_BUF2_FLAG);
+            DataCopy(reUb, mm2ResGm[srcGmOffset], 2U * headDim);
+            SetFlag<AscendC::HardEvent::MTE2_V>(SYNC_INPUT_BUF2_FLAG);
+            WaitFlag<AscendC::HardEvent::MTE2_V>(SYNC_INPUT_BUF2_FLAG);
+            uint32_t base = 800U + (static_cast<uint32_t>(GetBlockIdx()) % 2U) * 40U;
+            for (uint32_t r = 0; (r < 2U) && (r < dealRowCount); r++) {
+                for (uint32_t k = 0; k < 4U; k++) {
+                    union {
+                        float f;
+                        uint32_t u;
+                    } cvt;
+                    cvt.f = reUb.GetValue(r * headDim + 64U + k * 128U);
+                    metadataGm.SetValue(base + r * 4U + k, cvt.u);
+                    // 与首读（tmpBmm2ResUb，未经 Abs/Select 修改前的值已被覆写——
+                    // 首读值用 bmm2ResUb(已除) × 除数 不可逆，故同时 dump 首读的
+                    // 分块后值域无法回 raw；双读均取 raw 重读，一致性即判据）
+                }
+            }
+            SetFlag<AscendC::HardEvent::V_MTE2>(SYNC_INPUT_BUF2_FLAG);
+            metadataGm.SetValue(base + 8U, info.loop);
+            metadataGm.SetValue(base + 9U, info.bn2IdxInCurCore);
+        }
+    }
+#endif
     Bmm2ResCopyOut(info, mSplitInfo, bmm2ResUb, mStart, startRow, dealRowCount, columnCount, actualColumnCount);
 }
 
