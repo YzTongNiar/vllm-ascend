@@ -167,6 +167,10 @@ struct ConstInfo {
     uint32_t syncC2V2 = 0U;
     uint32_t syncC2V1 = 0U;
     uint32_t syncV2C2 = 0U;
+    // kw-13: 按任务严格配对的"末循环 fixpipe 完成"旗标（AIC 每任务末循环置 / V2 每任务
+    // 唯一读前等）。既有 C2V2 的按循环配对被软流水错位一轮（V2(T) 消费 T-1 置位，
+    // 多任务核有陈旧旗标可早过 → 小 m 时末循环贡献追上 V2 的读）。
+    uint32_t syncC2V2Last = 0U;
 
     float scaleValue = 0;
     uint32_t mmResUbSize = 0U; // Matmul1输出结果GM上的大小

@@ -126,6 +126,9 @@ template <typename FIAT, typename CubeBlockType,
     static constexpr uint32_t SYNC_C2_V1_FLAG = 4;
     static constexpr uint32_t SYNC_V2_C2_FLAG = 2;
     static constexpr uint32_t SYNC_V1_NUPDATE_C2_FLAG = 5;
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    static constexpr uint32_t SYNC_C2V2LAST_FLAG = 0; // kw-13: 按任务配对的末循环 fixpipe 完成旗标
+#endif
 
     static constexpr int64_t fdPrefetchLen = 2;
 
@@ -282,6 +285,9 @@ __aicore__ inline void FiaKernelNonQuantMla<FIAT, CubeBlockType, VecBlockType, F
     constInfo.syncC2V1 = SYNC_C2_V1_FLAG;
     constInfo.syncV2C2 = SYNC_V2_C2_FLAG;
     constInfo.syncV1NupdateC2 = SYNC_V1_NUPDATE_C2_FLAG;
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    constInfo.syncC2V2Last = SYNC_C2V2LAST_FLAG; // kw-13: 跨核 id 0（未被占用）
+#endif
     constInfo.sinkNumber = tilingData->maskParams.sinkNumber;
     constInfo.keySinkNumber = tilingData->maskParams.keySinkNumber;
 // 读取非连续 stride

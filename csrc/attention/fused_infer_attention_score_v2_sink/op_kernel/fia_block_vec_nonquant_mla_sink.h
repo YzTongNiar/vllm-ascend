@@ -1656,6 +1656,16 @@ __aicore__ inline void FiaBlockVecNonQuantMla<FIAT>::DealBmm2ResBaseBlockAmla(
     uint64_t inOutBaseOffset = mStart * columnCount;
     uint64_t srcGmOffset = (info.bn2IdxInCurCore % constInfo.preLoadNum) * constInfo.bmm2ResUbSize + inOutBaseOffset;
 
+#if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+    // kw-13: V2 唯一读前等待本任务末循环 fixpipe 完成（PIPE_MTE2 = 消费队列）。
+    // 既有 C2V2 按循环配对被软流水错位一轮，多任务核陈旧旗标早过 → 双读探针实测
+    // 末循环贡献（+67/57）在 V2 处理窗口内仍在落地。AIV 消费者单等待（惯例，
+    // 与 syncC1V1/syncC2V2 的 V 侧等待同构）。
+    if (info.isLastS2Loop && !constInfo.batchInvariant) {
+        CrossCoreWaitFlag<FIA_CROSS_SYNC_MODE, PIPE_MTE2>(constInfo.syncC2V2Last);
+    }
+#endif
+
     LocalTensor<MM2_OUT_T> tmpBmm2ResUb = inputBuff1.Get<MM2_OUT_T>();
     tmpBmm2ResUb = tmpBmm2ResUb[pingpongFlag * INPUT1_BUFFER_OFFSET / sizeof(MM2_OUT_T)];
     WaitFlag<AscendC::HardEvent::V_MTE2>(SYNC_INPUT_BUF1_FLAG + pingpongFlag);

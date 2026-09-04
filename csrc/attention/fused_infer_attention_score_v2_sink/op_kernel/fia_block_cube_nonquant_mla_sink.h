@@ -1300,6 +1300,16 @@ __aicore__ inline void FiaBlockCubeNonQuantMla<FIAT>::ProcessMm2(const AiInfraIn
 #if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
                     // kw-11: fixpipe 排空事件（FIX→M），本缓冲可被后续 Mmad 覆写
                     SetFlag<HardEvent::FIX_M>(L0C_FIX_EVENT0 + cL0BufIter % 2);
+                    // kw-13: 本任务末循环 fixpipe（含原子写）完成事件（FIX→V2，双 bank）。
+                    // 双读探针实锤：V2 读 mm2ResGm 时末循环贡献仍在飞行（首读 57 → 晚读
+                    // 124）——既有 C2V2 按循环配对被流水线错位一轮（V2(T) 消费 T-1 的
+                    // 旗标），多任务核有陈旧旗标可早过。改为按任务 1:1 严格配对：
+                    // AIC 每任务末循环置一次（PIPE_FIX，排空后生效），V2 每任务唯一读前
+                    // 等一次——首任务无陈旧旗标天然阻塞，后续任务消费各自任务的置位。
+                    if (info.isLastS2Loop && !constInfo.batchInvariant) {
+                        CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncC2V2Last);
+                        CrossCoreSetFlag<FIA_CROSS_SYNC_MODE, PIPE_FIX>(constInfo.syncC2V2Last + FIA_CROSS_AIV1_OFFSET);
+                    }
 #endif
 
                     if (!constInfo.batchInvariant && !info.isFirstSInnerLoop) {
