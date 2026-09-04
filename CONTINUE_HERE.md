@@ -1,13 +1,13 @@
 # FIA v2 Sink A3→A5 移植 — 跨机续作指引（CONTINUE HERE）
 
-> 更新：2026-09-03（kw-11 收工时点）。本文档是另一台机器上恢复全部工作的单一入口。
+> 更新：2026-09-04（kw-12 收工时点）。本文档是另一台机器上恢复全部工作的单一入口。
 
 ## 0. 一页现状
 
 **任务**：FIA v2 Sink 双算子（主算子 AICore + metadata AICPU 前置）从 A3(Ascend910_93) 移植到
 A5(Ascend950PR)，兼容 A3（同一算子多 SoC，条件分支隔离），契约零变更。
 
-**代码终态**：分支 `feat/fia-v2-sink-a5` @ `3e4e36a4e`（= kw-9a + kw-9b + kw-10 + bt 钳位 + kw-11 探针/FIX_M/V2C2 三 hardening）
+**代码终态**：分支 `feat/fia-v2-sink-a5` @ `d84b9a563`（= kw-9a + kw-9b + kw-10 + 钳位 + kw-11 三 hardening + kw-12 双探针）
 基线 `ded354d3d`（交接包 feat/fia-v2-sink）。战役全程 kw-1..10，证据链
 `results/a5_port/MIGRATION_NOTES.md`（P0–P6.5）。
 
@@ -23,11 +23,12 @@ A 路线 kernel 内修复经 kernel worker agent；ulp 口径收尾（G1/G2 bit 
 | A3 回归 | 本机无 910_93 未实测；静态论证 A3 路径逐字节不变（全部改动 #if __NPU_ARCH__==3510 / 探针宏 / A5 条件 staging 内） | — |
 
 **遗留清单**（按优先级）：
-1. **C10 永久遗留**（kw-11 三轮攻坚未竟，按硬停止线登记）：触发域 = G≤2（vecDealM=16）×
-   并发核≥16 × 每 split ≥2 循环；污染在 mm2 累计器本体（探针实锤），ratio {10/9,11/9,12/9}
-   块质量等差族 + D-chunk 二值选择（c2/c3 脏）；已排除 9 类假设（P6–P6.6）；下一战役建议 =
-   mm2ResGm 原子链逐循环增量 dump，二分 fixpipe-atomic vs nupdate-atomic（探针基建常驻，
-   metadata[601] 魔数激活）
+1. **C10 + C02 并列永久遗留（kw-11/12 确认同族）**：唯一稳定轴 = actMBaseSize<~64 ×
+   并发核≥16 × 每 split ≥2 循环（mask/尾宽/B 数正交）；污染在 mm2 累计器；累计排除 11 类
+   （nupdate 原子链 A/B、FD-combine 去混淆、mm2 M 链、L0C 握手、slot 复用等，见 P6–P6.7）；
+   剩余嫌疑 = V2 读路径（DealBmm2ResBaseBlockAmla pingpong 链 dealRowCount<32）或跨循环
+   fixpipe 原子链 m<128 几何；下一战役 = 逐元素累计器 dump vs 宿主期望部分和逐列对照
+   （[603]/[604] 惰性探针常驻）
 2. bit 补齐（GQA ulp 差 → ProcessVec1Vf 移植）：dst strided store 布局两次探针未钉死，
    重启路径 = MIGRATION_NOTES P4 kw-7 节（attentionOutput 尾行单窗 dump 免拼装 / FlashMLA
    UB_VEC1_RES 注释反推）；VF 库接入三坑解法已固化（P4 kw-6 节）

@@ -136,3 +136,19 @@ sink 的 SoftmaxFlashV2（c220 库）vs 官方 V5 的 ProcessVec1Vf MicroAPI 路
   （探针基建已常驻，metadata[601] 魔数激活）
 - 终态：MLA **15/16 ulp** + GQA bit/ulp 零回退；提交 409de1ac5（探针）/3097c2886（FIX_M）/
   3e4e36a4e（V2C2）；证据链 MIGRATION_NOTES §P6–P6.6
+
+---
+
+## 附 5：kw-12 终态（2026-09-04，C02 攻坚 2/3 轮，与 C10 确认同族缺陷）
+
+- **协调者假设证伪**（免构建）：C02 逐 batch 尾宽梯度——8/8 batch 全脏含 b0（kv=4096 整块无尾宽 0）
+  → "sm0 尾块膨胀漏网"不成立；C02 = C10 同族（多核并发 + 中小 m），与 mask/尾宽正交
+- **nupdate 原子链排除**（A/B 探针 metadata[603]）：SKIP 后收敛 case 全崩（C05 0.0078→2.06）、
+  脏 case 恶化 → nupdate 数值承重且正确
+- **FD-combine 排除**（去混淆）：m=128 无拆分全净、m=32 单组脏 → 剩余唯一稳定轴 =
+  **actMBaseSize < ~64 × 并发核 ≥16 × 每 split ≥2 循环**
+- **C02 与 C10 并列永久遗留**；排除总表累计 11 类；剩余嫌疑 = V2 读路径
+  （DealBmm2ResBaseBlockAmla 的 DataCopy/pingpong 链 dealRowCount<32）或跨循环
+  fixpipe 原子链 m<128 几何；下一战役 = 逐元素累计器 dump vs 宿主期望部分和逐列对照
+- C08 性能补测 **0.274×**（快 3.6×）；MLA 15/16 ulp + GQA 零回退维持
+- 提交：2086de09c（A/B 探针）/ d84b9a563（快照探针基建）；证据链 §P6–P6.7
