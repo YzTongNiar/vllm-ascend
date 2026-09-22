@@ -77,6 +77,10 @@ else()
     ascendc_library(vllm_ascend_kernels SHARED
         ${VLLM_ASCEND_CUSTOM_OP}
     )
+    # DSpark markov-head custom op: direct AscendC kernels (ccec -O1) +
+    # torch host wrappers; registration on torch.ops._C_ascend lives in
+    # csrc/torch_binding.cpp.
+    add_subdirectory(csrc/spec_decode/markov_head)
 endif()
 
 message("TORCH_NPU_PATH is ${TORCH_NPU_PATH}")
@@ -90,6 +94,13 @@ else()
     ${CMAKE_CURRENT_SOURCE_DIR}/csrc/*.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/csrc/aclnn_torch_adapter/*.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/csrc/batch_matmul_transpose/op_host/tiling/tiling_data.cpp)
+endif()
+
+if(NOT (SOC_VERSION MATCHES "ascend310p.*|ascend950"))
+    # DSpark markov-head host wrappers (need the ascendc-generated launch
+    # headers of dspark_markov_head_kernels; unavailable on 310p/A5 builds).
+    list(APPEND VLLM_ASCEND_SRC ${DSPARK_MARKOV_HEAD_OP_HOST_SOURCES})
+    include_directories(${DSPARK_MARKOV_HEAD_OP_HOST_INCLUDE_DIRS})
 endif()
 
 include_directories(
@@ -191,6 +202,7 @@ else()
     vllm_ascend_C
     PUBLIC
     vllm_ascend_kernels
+    dspark_markov_head_kernels
     ${VLLM_ASCEND_C_COMMON_LIBS}
   )
 endif()
@@ -200,5 +212,5 @@ target_link_options(vllm_ascend_C PRIVATE "-Wl,-rpath,$ORIGIN:$ORIGIN/lib:$ORIGI
 if(SOC_VERSION MATCHES "ascend310p.*|ascend950")
   install(TARGETS vllm_ascend_C DESTINATION ${VLLM_ASCEND_INSTALL_PATH})
 else()
-  install(TARGETS vllm_ascend_C vllm_ascend_kernels DESTINATION ${VLLM_ASCEND_INSTALL_PATH})
+  install(TARGETS vllm_ascend_C vllm_ascend_kernels dspark_markov_head_kernels DESTINATION ${VLLM_ASCEND_INSTALL_PATH})
 endif()
