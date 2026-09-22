@@ -35,6 +35,7 @@
 #include "moe/rms_norm_cast/rms_norm_cast_torch_adpt.h"
 #ifdef VLLM_ENABLE_ATB_AND_DIRECT_KERNELS
 #include "mla_preprocess/mla_preprocess_torch_adpt.h"
+#include "spec_decode/markov_head/ops.h"
 #endif
 #include "mc2/dispatch_ffn_combine/dispatch_ffn_combine_torch_adpt.h"
 #include "gmm/grouped_matmul_swiglu_quant_weight_nz_tensor_list/grouped_matmul_swiglu_quant_torch_adpt.h"
@@ -2912,6 +2913,49 @@ TORCH_LIBRARY_EXPAND(CONCAT(_C, _ascend), ops)
 
     ops.def("swap_blocks(Tensor! x, Tensor! y, Tensor z) -> ()");
     ops.impl("swap_blocks", torch::kPrivateUse1, &vllm_ascend::swap_blocks);
+
+    // DSpark markov-head chain (spec decode). Sources under
+    // csrc/spec_decode/markov_head (ported from the standalone
+    // dspark_markov_head wheel project; that wheel registers the same op
+    // family on the "npu" library namespace, so this in-repo build keeps the
+    // _C_ascend namespace and both can coexist in one process).
+    ops.def(
+        "dspark_markov_head(Tensor logits, Tensor draft_token_ids, "
+        "Tensor markov_w1_weight, Tensor markov_w2_weight) -> Tensor");
+    ops.impl("dspark_markov_head", torch::kPrivateUse1,
+             &ascend_kernel::dspark_markov_head);
+    ops.def("dspark_markov_head_ws(Tensor dummy) -> Tensor[]");
+    ops.impl("dspark_markov_head_ws", torch::kPrivateUse1,
+             &ascend_kernel::dspark_markov_head_ws);
+    ops.def(
+        "dspark_mh2_emb(Tensor tok_line, Tensor ws, Tensor w1, Tensor emb_out, "
+        "Tensor tok_out, int lo, int hi, int mode) -> ()");
+    ops.impl("dspark_mh2_emb", torch::kPrivateUse1, &ascend_kernel::dspark_mh2_emb);
+    ops.def("dspark_mh2_bias(Tensor emb, Tensor w2, Tensor bias_out) -> ()");
+    ops.impl("dspark_mh2_bias", torch::kPrivateUse1, &ascend_kernel::dspark_mh2_bias);
+    ops.def(
+        "dspark_mh2_argmax(Tensor logits, Tensor bias_flat, Tensor ws, int step_k) -> ()");
+    ops.impl("dspark_mh2_argmax", torch::kPrivateUse1,
+             &ascend_kernel::dspark_mh2_argmax);
+    ops.def(
+        "dspark_mh3_step(Tensor logits, Tensor w1, Tensor w2, Tensor ws_ag, "
+        "Tensor seed_line, Tensor tok_out, int r0, int world, int step_k, "
+        "int mode) -> ()");
+    ops.impl("dspark_mh3_step", torch::kPrivateUse1, &ascend_kernel::dspark_mh3_step);
+    ops.def(
+        "dspark_mh3_step_fused(Tensor logits, Tensor w1, Tensor w2, Tensor ws_ag, "
+        "Tensor seed_line, Tensor tok_out, int r0, int world, int step_k, "
+        "int mode) -> ()");
+    ops.impl("dspark_mh3_step_fused", torch::kPrivateUse1,
+             &ascend_kernel::dspark_mh3_step_fused);
+    ops.def("dspark_mh3_merge(Tensor ws_ag, Tensor tok_out, int B, int world) -> ()");
+    ops.impl("dspark_mh3_merge", torch::kPrivateUse1, &ascend_kernel::dspark_mh3_merge);
+    ops.def("dspark_probe_empty(Tensor out, int nBlocks) -> ()");
+    ops.impl("dspark_probe_empty", torch::kPrivateUse1,
+             &ascend_kernel::dspark_probe_empty);
+    ops.def("dspark_probe_empty_fat(Tensor out, int nBlocks) -> ()");
+    ops.impl("dspark_probe_empty_fat", torch::kPrivateUse1,
+             &ascend_kernel::dspark_probe_empty_fat);
 #endif
 
     // swap_blocks_batch takes CPU tensors (int64 pointer/size arrays), not NPU

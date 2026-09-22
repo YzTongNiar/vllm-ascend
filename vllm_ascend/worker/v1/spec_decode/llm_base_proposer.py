@@ -65,6 +65,7 @@ from vllm_ascend.ops.triton.spec_decode.utils import (
 from vllm_ascend.ops.triton.triton_utils import get_vectorcore_num
 from vllm_ascend.utils import _is_glm_model, check_gdn_layer, enable_sp, lmhead_tp_enable, use_updatable_graph
 from vllm_ascend.worker.device_metadata import DeviceMetadataTask, DeviceMetadataTaskProvider
+from vllm_ascend.worker.v1.spec_decode.dspark_markov_ascendc import maybe_run_dspark_markov_ascendc
 from vllm_ascend.worker.v1.spec_decode.utils import (
     SlidingWindowAdapter,
     _maybe_eager_context,
@@ -1580,23 +1581,34 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
                 draft_token_ids = self._dspark_draft_buffer[:num_blk]
                 draft_token_ids[:, 0].copy_(self._dspark_seed_buffer[:num_blk])
                 dspark_probs_list: list[torch.Tensor] = []
-                for idx in range(self.num_speculative_tokens):
-                    markov_emb = self.model.markov_embed(draft_token_ids[:, idx])
-                    logits_bias = self.model.markov_bias(markov_emb)
-                    logits[:, idx].add_(logits_bias)
-                    if use_probabilistic:
-                        # Use probabilistic sampling instead of argmax.
-                        # logits[:, idx] is [num_blk, V], matching
-                        # batch_size for per-request temperature.
-                        token_ids, probs = self._sample_draft_from_logits(logits[:, idx], sampling_metadata)
-                        draft_token_ids[:, idx + 1].copy_(token_ids)
-                        if probs is not None:
-                            dspark_probs_list.append(probs)
-                    else:
-                        next_token_ids = logits[:, idx].argmax(dim=-1)
-                        if dspark_has_vocab_mapping:
-                            next_token_ids = self.model.map_draft_to_target(next_token_ids)
-                        draft_token_ids[:, idx + 1].copy_(next_token_ids)
+                # AscendC fast path (opt-in via VLLM_ASCEND_DSPARK_MARKOV_IMPL=
+                # ascendc): the L3 fused-step chain replaces this per-step loop
+                # with a bit-identical result; unsupported shapes/layouts fall
+                # back to the original PyTorch loop below. Vocab-mapped
+                # drafters (draft_id_to_target_id) also keep the torch loop:
+                # the operator is unaware of the draft->target id remap.
+                if (
+                    use_probabilistic
+                    or dspark_has_vocab_mapping
+                    or not maybe_run_dspark_markov_ascendc(self, logits, draft_token_ids)
+                ):
+                    for idx in range(self.num_speculative_tokens):
+                        markov_emb = self.model.markov_embed(draft_token_ids[:, idx])
+                        logits_bias = self.model.markov_bias(markov_emb)
+                        logits[:, idx].add_(logits_bias)
+                        if use_probabilistic:
+                            # Use probabilistic sampling instead of argmax.
+                            # logits[:, idx] is [num_blk, V], matching
+                            # batch_size for per-request temperature.
+                            token_ids, probs = self._sample_draft_from_logits(logits[:, idx], sampling_metadata)
+                            draft_token_ids[:, idx + 1].copy_(token_ids)
+                            if probs is not None:
+                                dspark_probs_list.append(probs)
+                        else:
+                            next_token_ids = logits[:, idx].argmax(dim=-1)
+                            if dspark_has_vocab_mapping:
+                                next_token_ids = self.model.map_draft_to_target(next_token_ids)
+                            draft_token_ids[:, idx + 1].copy_(next_token_ids)
                 if use_probabilistic and dspark_probs_list:
                     # Stack [K x [num_blk, V]] -> [num_blk, K, V] ->
                     # [num_blk * K, V] to match early_exit view logic.
