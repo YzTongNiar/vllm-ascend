@@ -29,20 +29,21 @@
 # What's Patched and how it works:
 # --------------------------------
 # * worker/patch_kda_recoverssm.py:
-#   Target: Kimi KDA's KDARecoverSSMCommitContext module binding.
-#   Why: The upstream metadata builder imports its CUDA context directly.
-#   How: Replace only the context class on GLM workers with RecoverSSM enabled.
+#   Target: Kimi KDA and Qwen GDN RecoverSSM context module bindings.
+#   Why: The upstream metadata builders import their CUDA contexts directly.
+#   How: Replace the context classes and Ascend convolution helpers only when
+#        the corresponding model has RecoverSSM enabled.
 #   Related PR: No upstream context-factory extension point exists yet.
 #   Future plan: Remove when upstream allows the backend to select the context.
 # --------------------------------
 # * platform/patch_replayssm_config.py:
 #   Target: VllmConfig.validate_mamba_cached_kernel and its Pydantic validator.
 #   Why: The paired upstream validator selects KDA RecoverSSM only for Kimi,
-#        while Ascend also implements it for GLM-Next.
-#   How: Validate GLM's supported execution/cache/PD contract and derive
-#        use_kda_recoverssm from the existing use_replayssm flag. Other models
+#        while Ascend also implements it for GLM-Next and Qwen GDN.
+#   How: Validate the model-specific execution/cache/PD contract and derive
+#        the appropriate RecoverSSM selector from use_replayssm. Other models
 #        and disabled configurations retain the upstream validator.
-#   Related PR: No upstream GLM ReplaySSM configuration extension exists yet.
+#   Related PR: No upstream Ascend selector extension exists yet.
 #   Future plan: Remove this patch when upstream supports GLM KDA selection.
 # --------------------------------
 # * Platform Patch:

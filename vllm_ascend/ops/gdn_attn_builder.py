@@ -1129,6 +1129,15 @@ class AscendGDNHostMetadataBackend(AscendGDNAttentionBackend):
     @staticmethod
     def get_builder_cls() -> type[GDNAttentionMetadataBuilder]:
         vllm_config = get_current_vllm_config_or_none()
+        if vllm_config is not None:
+            from vllm_ascend.models.qwen3_5.recoverssm_config import use_qwen_gdn_recoverssm
+
+            if use_qwen_gdn_recoverssm(vllm_config):
+                from vllm_ascend.models.qwen3_5.recoverssm_metadata import (
+                    AscendGDNRecoverSSMMetadataBuilder,
+                )
+
+                return AscendGDNRecoverSSMMetadataBuilder
         if vllm_config is not None and vllm_config.model_config.hf_text_config.model_type in (
             "glm5_next",
             "glm5_next_text",
@@ -1156,3 +1165,15 @@ class AscendGDNFusedAttentionBackend(AscendGDNAttentionBackend):
         if get_pcp_group().world_size == 1 and AscendGatedDeltaNetAttention._supports_host_metadata_prefill():
             return AscendGDNHostMetadataBuilder
         return AscendGDNAttentionMetadataBuilder
+
+
+class AscendGDNRecoverSSMAttentionBackend(AscendGDNAttentionBackend):
+    """Ascend backend selecting the GDN RecoverSSM metadata builder."""
+
+    @staticmethod
+    def get_builder_cls() -> type[GDNAttentionMetadataBuilder]:
+        from vllm_ascend.models.qwen3_5.recoverssm_metadata import (
+            AscendGDNRecoverSSMMetadataBuilder,
+        )
+
+        return AscendGDNRecoverSSMMetadataBuilder

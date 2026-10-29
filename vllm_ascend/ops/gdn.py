@@ -357,8 +357,8 @@ class AscendGatedDeltaNetAttention(GatedDeltaNetAttention):
 
     def get_state_shape(
         self,
-    ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
-        return MambaStateShapeCalculator.gated_delta_net_state_shape(
+    ) -> tuple[tuple[int, ...], ...]:
+        shapes = MambaStateShapeCalculator.gated_delta_net_state_shape(
             self.tp_size,
             self.num_k_heads,
             self.num_v_heads,
@@ -367,6 +367,14 @@ class AscendGatedDeltaNetAttention(GatedDeltaNetAttention):
             self.conv_kernel_size,
             self.num_spec,
         )
+        if getattr(self, "use_gdn_recoverssm", False):
+            replay_shape = (
+                self.num_v_heads // self.tp_size,
+                self.num_spec + 1,
+                self.head_v_dim + self.head_k_dim + 1,
+            )
+            return (*shapes, replay_shape)
+        return shapes
 
     def _warmup_prefill_kernels(self, qkv_or_qkvz: torch.Tensor, v_dim: int) -> None:
         return
@@ -375,6 +383,10 @@ class AscendGatedDeltaNetAttention(GatedDeltaNetAttention):
         return
 
     def get_attn_backend(self) -> type[AttentionBackend]:
+        if getattr(self, "use_gdn_recoverssm", False):
+            from vllm_ascend.ops.gdn_attn_builder import AscendGDNRecoverSSMAttentionBackend
+
+            return AscendGDNRecoverSSMAttentionBackend
         return AscendGDNFusedAttentionBackend
 
     def forward(
@@ -711,7 +723,34 @@ class AscendGatedDeltaNetAttention(GatedDeltaNetAttention):
         num_decode_tokens = attn_metadata.num_decode_tokens
 
         # 2.1: Process the multi-query part
-        if spec_sequence_masks is not None:
+        if spec_sequence_masks is not None and getattr(self, "use_gdn_recoverssm", False):
+            from vllm_ascend.ops.triton.gdn.recoverssm import gdn_recoverssm_verify
+
+            assert spec_state_indices_tensor is not None
+            assert spec_causal_conv1d_meta is not None
+            if attn_metadata.num_prefills == 0 and attn_metadata.num_decodes == 0:
+                a_spec = a
+                b_spec = b
+            else:
+                a_spec = a.index_select(0, spec_token_indx)
+                b_spec = b.index_select(0, spec_token_indx)
+            core_attn_out_spec = gdn_recoverssm_verify(
+                self.A_log.reshape(-1),
+                a_spec,
+                b_spec,
+                self.dt_bias.reshape(-1),
+                query_spec,
+                key_spec,
+                value_spec,
+                checkpoint_state=ssm_state,
+                replay_cache=self_kv_cache[2],
+                query_start_loc=spec_causal_conv1d_meta.query_start_loc,
+                state_indices=spec_state_indices_tensor[: attn_metadata.num_spec_decodes, 0],
+                spec_query_len=self.num_spec + 1,
+                use_qk_l2norm_in_kernel=True,
+            )
+            last_recurrent_state = None
+        elif spec_sequence_masks is not None:
             actual_seq_lengths = attn_metadata.spec_decode_metadata.actual_seq_lengths
             query_spec = l2norm_fwd(query_spec)
             key_spec = l2norm_fwd(key_spec)
